@@ -155,9 +155,11 @@ def train_one_seed(task, loss_fn, model, config, seed, device) -> list[dict]:
 TASKS = {
     'mnist': lambda c: MNISTBandit(),
     'token_reversal': lambda c: TokenReversal(
-        vocab_size=c.vocab_size, seq_len=c.seq_len),
+        vocab_size=c.vocab_size, seq_len=c.seq_len,
+        binary_reward=c.binary_reward),
     'masked_reversal': lambda c: MaskedReversal(
-        vocab_size=c.vocab_size, seq_len=c.seq_len, score_len=c.score_len),
+        vocab_size=c.vocab_size, seq_len=c.seq_len, score_len=c.score_len,
+        binary_reward=c.binary_reward),
     'lm_bandit': lambda c: LMBandit(
         model_name=c.model_name, context_len=c.context_len,
         kl_weight=c.kl_weight),
@@ -218,6 +220,7 @@ class Config:
     vocab_size: int = 2
     seq_len: int = 10
     score_len: int = 5
+    binary_reward: bool = False
     d_model: int = 64
     nhead: int = 2
     num_layers: int = 2

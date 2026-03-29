@@ -164,9 +164,10 @@ class TokenReversal:
     """Token reversal task from DG paper Section 5."""
 
 
-    def __init__(self, vocab_size: int, seq_len: int):
+    def __init__(self, vocab_size: int, seq_len: int, binary_reward: bool = False):
         self.vocab_size = vocab_size
         self.seq_len = seq_len
+        self.binary_reward = binary_reward
         self.effective_vocab = vocab_size + 1
         self.sep_token = vocab_size
         self.num_actions = self.effective_vocab
@@ -202,7 +203,11 @@ class TokenReversal:
         actions = torch.stack(generated, dim=1)           # [B, H]
         logp_a = torch.stack(per_token_logp, dim=1)       # [B, H]
         baseline = torch.stack(per_token_baseline, dim=1).mean(dim=1)  # [B]
-        rewards = (actions == target_tokens).float().mean(dim=1)
+        correct = (actions == target_tokens).float()
+        if self.binary_reward:
+            rewards = correct.all(dim=1).float()  # exact sequence match
+        else:
+            rewards = correct.mean(dim=1)  # fraction correct
         obs = torch.cat([input_tokens, sep, actions], dim=1)
         return actions, logp_a, baseline, rewards, obs, target_tokens
 
@@ -282,7 +287,7 @@ class TokenReversal:
     def evaluate(self, model: nn.Module, device: torch.device,
                  num_batches: int = 10, batch_size: int = 100) -> dict[str, float]:
         H, M = self.seq_len, self.vocab_size
-        total_correct, total_tokens = 0, 0
+        total_correct, total_tokens, total_exact, total_seqs = 0, 0, 0, 0
         model.eval()
         for _ in range(num_batches):
             input_tokens = torch.randint(M, (batch_size, H), device=device)
@@ -295,6 +300,10 @@ class TokenReversal:
             generated = prefix[:, H + 1:]
             total_correct += (generated == target_tokens).float().sum().item()
             total_tokens += batch_size * H
+            total_exact += (generated == target_tokens).all(dim=1).float().sum().item()
+            total_seqs += batch_size
+        if self.binary_reward:
+            return {'test_error': 1.0 - total_exact / total_seqs}
         return {'test_error': 1.0 - total_correct / total_tokens}
 
 
@@ -315,8 +324,9 @@ class MaskedReversal(TokenReversal):
     scored reward.
     """
 
-    def __init__(self, vocab_size: int, seq_len: int, score_len: int):
-        super().__init__(vocab_size, seq_len)
+    def __init__(self, vocab_size: int, seq_len: int, score_len: int,
+                 binary_reward: bool = False):
+        super().__init__(vocab_size, seq_len, binary_reward=binary_reward)
         assert 1 <= score_len <= seq_len
         self.score_len = score_len
 
@@ -324,7 +334,10 @@ class MaskedReversal(TokenReversal):
         actions, logp_a, baseline, _, obs, targets = super()._rollout(
             model, input_tokens, device)
         scored = actions[:, -self.score_len:] == targets[:, -self.score_len:]
-        rewards = scored.float().mean(dim=1)
+        if self.binary_reward:
+            rewards = scored.all(dim=1).float()  # all scored positions correct
+        else:
+            rewards = scored.float().mean(dim=1)
         return actions, logp_a, baseline, rewards, obs, targets
 
     def sample_batch(self, model, batch_size, device, group_size=1):
@@ -341,6 +354,7 @@ class MaskedReversal(TokenReversal):
     def evaluate(self, model, device, num_batches=10, batch_size=100):
         H, M, S = self.seq_len, self.vocab_size, self.score_len
         scored_correct, scored_total = 0, 0
+        scored_exact, scored_seqs = 0, 0
         unscored_correct, unscored_total = 0, 0
         model.eval()
         for _ in range(num_batches):
@@ -355,10 +369,15 @@ class MaskedReversal(TokenReversal):
             correct = (generated == target_tokens).float()
             scored_correct += correct[:, -S:].sum().item()
             scored_total += batch_size * S
+            scored_exact += correct[:, -S:].all(dim=1).float().sum().item()
+            scored_seqs += batch_size
             if S < H:
                 unscored_correct += correct[:, :-S].sum().item()
                 unscored_total += batch_size * (H - S)
-        result = {'test_error': 1.0 - scored_correct / scored_total}
+        if self.binary_reward:
+            result = {'test_error': 1.0 - scored_exact / scored_seqs}
+        else:
+            result = {'test_error': 1.0 - scored_correct / scored_total}
         if unscored_total > 0:
             result['test_error_unscored'] = 1.0 - unscored_correct / unscored_total
         return result
