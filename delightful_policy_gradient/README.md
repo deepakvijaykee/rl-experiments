@@ -4,7 +4,7 @@ PyTorch implementation of [Delightful Policy Gradient](https://arxiv.org/abs/260
 
 ## Intuition
 
-Standard policy gradients weight each sample by advantage alone. A rare wrong action gets the same gradient weight as a rare right one. DG fixes this by gating each term with *delight* = advantage × surprisal. Rare successes (breakthroughs) pass through; rare failures (blunders) are suppressed. One sigmoid, one multiply — drop-in replacement for REINFORCE.
+Standard policy gradients weight each sample by advantage alone. A rare wrong action gets the same gradient weight as a rare right one. DG gates each term with *delight* = advantage x surprisal. Rare successes (breakthroughs) pass through; rare failures (blunders) are suppressed. One sigmoid, one multiply, drop-in replacement for REINFORCE.
 
 ## Usage
 
@@ -23,6 +23,6 @@ CE, REINFORCE, PG, DG, Kondo, LogGrowth, DAPO, PMDMean
 
 ## Tasks
 
-- **mnist** — contextual bandit (10 actions)
-- **token_reversal** — autoregressive sequence reversal
-- **lm_bandit** — next-token prediction with any HuggingFace causal LM
+- **mnist**: contextual bandit (10 actions)
+- **token_reversal**: autoregressive sequence reversal
+- **lm_bandit**: next-token prediction with any HuggingFace causal LM
