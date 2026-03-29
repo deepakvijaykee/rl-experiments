@@ -68,7 +68,12 @@ def _pg_core(logits, batch, baseline_kind):
 
 
 class CELoss:
-    """Cross-entropy (supervised oracle). Uses true labels, ignores RL experience."""
+    """Cross-entropy supervised reference. Uses true labels, ignores RL experience.
+
+    True oracle on MNIST (exact supervised objective). On sequence tasks,
+    this is a dense upper bound: it trains all positions with per-token
+    supervision, which is strictly stronger than the RL reward signal.
+    """
     name = 'CE'
 
     def __call__(self, logits, batch):
@@ -247,8 +252,10 @@ class DGTokenCreditLoss:
     not an oracle where only scored positions matter.
 
     This tests whether token-level delight outperforms sequence-level delight.
-    Only meaningful for sequential tasks with batch.actions [B, T] and
-    batch.labels [B, T].
+    Only meaningful for sequential tasks with fractional reward where
+    per-token correctness decomposes the reward. Not faithful on
+    binary_reward tasks (all-or-nothing reward does not decompose
+    into per-token contributions).
     """
     name = 'DGToken'
 
