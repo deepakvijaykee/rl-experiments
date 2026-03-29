@@ -236,6 +236,8 @@ def run_config(config: Config) -> pd.DataFrame:
         for r in rows:
             r.update({'seed': seed, 'method': config.method, 'delay': config.delay})
         all_rows.extend(rows)
+        # Write after each seed so completed work survives crashes
+        pd.DataFrame(all_rows).to_csv(config.output, index=False)
 
     return pd.DataFrame(all_rows)
 

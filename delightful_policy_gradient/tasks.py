@@ -363,7 +363,7 @@ class LMBandit:
             ref_lp = F.log_softmax(self.ref_model(contexts)[:, -1, :].float(), dim=-1)
             # reshape to 2D for gather: [N, 1] or [N, K]
             idx = actions.reshape(actions.shape[0], -1)
-            kl = (actor_lp.gather(-1, idx) - ref_lp.gather(-1, idx)).clamp(min=0)
+            kl = actor_lp.gather(-1, idx) - ref_lp.gather(-1, idx)
             return base - self.kl_weight * kl.reshape_as(base)
 
     def sample_batch(self, model: nn.Module, batch_size: int,
@@ -489,6 +489,8 @@ class LMBandit:
                 all_log_prob.extend(lp.gather(1, lab.unsqueeze(1)).squeeze(1).tolist())
 
         n = len(all_correct)
+        # Perplexity over non-overlapping windows (one token per window).
+        # Consistent across methods but not comparable to published full-sequence perplexity.
         result = {
             'test_error': 1.0 - sum(all_correct) / n,
             'perplexity': math.exp(-sum(all_log_prob) / n),

@@ -1,0 +1,7 @@
+torch
+torchvision
+pandas
+plotnine
+transformers
+datasets
+accelerate

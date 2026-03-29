@@ -90,7 +90,9 @@ class REINFORCELoss:
 
 
 class PGLoss:
-    """Importance-weighted PG — uses exact behavior probabilities."""
+    """Importance-weighted PG. Exact for one-step tasks (bandits).
+    For sequential tasks, uses per-token ratios — a standard approximation,
+    not exact trajectory-level off-policy correction."""
     name = 'PG'
 
     def __init__(self, baseline: str = 'expected', iw_cap: float = 10.0):
