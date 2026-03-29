@@ -56,7 +56,15 @@ def _pg_core(logits, batch, baseline_kind):
     probs = F.softmax(logits, dim=-1)
     logp_a = gather_log_probs(log_probs, batch.actions)
 
-    baseline = compute_baseline(baseline_kind, probs)  # [B]
+    # Baseline for advantage centering. When exact E[R|x] is available
+    # (binary-reward tasks with known labels), use it. This upgrades all
+    # _pg_core methods: better control variate for REINFORCE/PG, correct
+    # gate calibration for DG. On tasks where E[R|x] is not cheaply exact
+    # (fractional sequence reward), falls back to sum(pi^2).
+    if batch.actor_expected_reward is not None:
+        baseline = batch.actor_expected_reward                # [B]
+    else:
+        baseline = compute_baseline(baseline_kind, probs)  # [B]
     advantage = batch.rewards - baseline                # [B]
     while advantage.dim() < logp_a.dim():
         advantage = advantage.unsqueeze(-1)
@@ -169,7 +177,7 @@ class KondoLoss:
         sequence via max |delight| over tokens. Mask is always [B].
         """
         actor_logp_a = batch.actor_logp_a
-        baseline = batch.actor_baseline
+        baseline = batch.actor_expected_reward if batch.actor_expected_reward is not None else batch.actor_baseline
         advantage = batch.rewards - baseline
         while advantage.dim() < actor_logp_a.dim():
             advantage = advantage.unsqueeze(-1)

@@ -133,6 +133,10 @@ def train_one_seed(task, loss_fn, model, config, seed, device) -> list[dict]:
             with torch.amp.autocast('cuda', dtype=torch.bfloat16, enabled=autocast):
                 eval_metrics = task.evaluate(model, device)
             row = {'step': step, 'loss': loss.item(), **metrics, **eval_metrics}
+            if batch.informative_group_rate is not None:
+                row['mixed_group_rate'] = batch.informative_group_rate
+                row['retained_group_rate'] = batch.retained_group_rate
+                row['group_fallback'] = float(batch.used_group_fallback)
 
             if config.diagnostics and step % (config.eval_every * 5) == 0:
                 model.train()

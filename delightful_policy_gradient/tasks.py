@@ -39,6 +39,11 @@ class Batch:
     actor_baseline: torch.Tensor  # [B]
     group_ids: torch.Tensor | None = None
     score_mask: torch.Tensor | None = None  # [B, T] bool: which positions are scored
+    actor_expected_reward: torch.Tensor | None = None  # [B]: exact E[R|x] under actor
+    # Sampler-side group diagnostics (plain scalars, not tensors)
+    informative_group_rate: float | None = None  # pre-filter mixed-group rate
+    retained_group_rate: float | None = None     # post-filter fraction kept
+    used_group_fallback: bool = False            # True if empty-batch safeguard fired
 
     def to(self, device) -> 'Batch':
         return Batch(
@@ -47,7 +52,11 @@ class Batch:
             actor_logp_a=self.actor_logp_a.to(device),
             actor_baseline=self.actor_baseline.to(device),
             group_ids=self.group_ids.to(device) if self.group_ids is not None else None,
-            score_mask=self.score_mask.to(device) if self.score_mask is not None else None)
+            score_mask=self.score_mask.to(device) if self.score_mask is not None else None,
+            actor_expected_reward=self.actor_expected_reward.to(device) if self.actor_expected_reward is not None else None,
+            informative_group_rate=self.informative_group_rate,
+            retained_group_rate=self.retained_group_rate,
+            used_group_fallback=self.used_group_fallback)
 
     def select(self, mask: torch.Tensor) -> 'Batch':
         return Batch(
@@ -56,7 +65,11 @@ class Batch:
             actor_logp_a=self.actor_logp_a[mask],
             actor_baseline=self.actor_baseline[mask],
             group_ids=self.group_ids[mask] if self.group_ids is not None else None,
-            score_mask=self.score_mask[mask] if self.score_mask is not None else None)
+            score_mask=self.score_mask[mask] if self.score_mask is not None else None,
+            actor_expected_reward=self.actor_expected_reward[mask] if self.actor_expected_reward is not None else None,
+            informative_group_rate=self.informative_group_rate,
+            retained_group_rate=self.retained_group_rate,
+            used_group_fallback=self.used_group_fallback)
 
 
 # ── MNIST Contextual Bandit ──────────────────────────────────────────────────
@@ -92,14 +105,17 @@ class MNISTBandit:
         with torch.no_grad():
             actor_logits = model(images)
             actor_lp = F.log_softmax(actor_logits, dim=-1)
+            actor_probs = F.softmax(actor_logits, dim=-1)
             actions = torch.distributions.Categorical(logits=actor_logits).sample()
             logp_a = actor_lp.gather(-1, actions.unsqueeze(-1)).squeeze(-1)
-            baseline = (F.softmax(actor_logits, dim=-1) ** 2).sum(-1)
+            baseline = (actor_probs ** 2).sum(-1)
+            p_success = actor_probs.gather(-1, labels.unsqueeze(-1)).squeeze(-1)
         model.train()
 
         return Batch(obs=images, actions=actions,
                      rewards=(actions == labels).float(),
-                     labels=labels, actor_logp_a=logp_a, actor_baseline=baseline)
+                     labels=labels, actor_logp_a=logp_a, actor_baseline=baseline,
+                     actor_expected_reward=p_success)
 
     def _sample_grouped(self, model, batch_size, group_size, device) -> Batch:
         """K actions per context for DAPO. Returns flattened batch with group_ids."""
@@ -120,25 +136,30 @@ class MNISTBandit:
 
         rewards = (actions == labels.unsqueeze(1)).float()  # [N, K]
 
-        has_mix = (rewards.sum(1) > 0) & (rewards.sum(1) < group_size)
-        if has_mix.sum() == 0:
-            has_mix[:] = True
+        raw_keep = (rewards.sum(1) > 0) & (rewards.sum(1) < group_size)
+        informative_rate = raw_keep.float().mean().item()
+        fallback = raw_keep.sum() == 0
+        if fallback:
+            raw_keep[:] = True
 
-        n_valid = has_mix.sum().item()
+        n_valid = raw_keep.sum().item()
         K = group_size
 
-        images_f = images[has_mix].unsqueeze(1).expand(-1, K, -1).reshape(-1, 784)
-        labels_f = labels[has_mix].unsqueeze(1).expand(-1, K).reshape(-1)
-        actions_f = actions[has_mix].reshape(-1)
-        rewards_f = rewards[has_mix].reshape(-1)
+        images_f = images[raw_keep].unsqueeze(1).expand(-1, K, -1).reshape(-1, 784)
+        labels_f = labels[raw_keep].unsqueeze(1).expand(-1, K).reshape(-1)
+        actions_f = actions[raw_keep].reshape(-1)
+        rewards_f = rewards[raw_keep].reshape(-1)
         # Per-action log-probs: actor_lp [N, V], actions [N, K] → gather gives [N, K]
-        logp_a_f = actor_lp[has_mix].gather(-1, actions[has_mix]).reshape(-1)
-        baseline_f = actor_bl[has_mix].unsqueeze(1).expand(-1, K).reshape(-1)
+        logp_a_f = actor_lp[raw_keep].gather(-1, actions[raw_keep]).reshape(-1)
+        baseline_f = actor_bl[raw_keep].unsqueeze(1).expand(-1, K).reshape(-1)
         group_ids = torch.arange(n_valid, device=device).unsqueeze(1).expand(-1, K).reshape(-1)
 
         return Batch(obs=images_f, actions=actions_f, rewards=rewards_f,
                      labels=labels_f, actor_logp_a=logp_a_f,
-                     actor_baseline=baseline_f, group_ids=group_ids)
+                     actor_baseline=baseline_f, group_ids=group_ids,
+                     informative_group_rate=informative_rate,
+                     retained_group_rate=n_valid / num_contexts,
+                     used_group_fallback=fallback.item())
 
     def compute_logits(self, model: nn.Module, batch: Batch) -> torch.Tensor:
         return model(batch.obs)
@@ -220,9 +241,22 @@ class TokenReversal:
             input_tokens = torch.randint(M, (batch_size, H), device=device)
             actions, logp_a, baseline, rewards, obs, labels = self._rollout(
                 model, input_tokens, device)
+
+            # Exact P(success) for binary tasks: one teacher-forced oracle pass
+            p_success = None
+            if self.binary_reward:
+                oracle_prefix = torch.cat([input_tokens,
+                                           obs[:, H:H+1],  # sep token
+                                           labels[:, :-1]], dim=1)
+                with torch.no_grad():
+                    oracle_lp = F.log_softmax(model(oracle_prefix)[:, H:, :], dim=-1)
+                    p_success = oracle_lp.gather(
+                        -1, labels.unsqueeze(-1)).squeeze(-1).sum(dim=1).exp()
+
             model.train()
             return Batch(obs=obs, actions=actions, rewards=rewards,
-                         labels=labels, actor_logp_a=logp_a, actor_baseline=baseline)
+                         labels=labels, actor_logp_a=logp_a, actor_baseline=baseline,
+                         actor_expected_reward=p_success)
 
         # K rollouts per input — how DAPO/GRPO work in practice
         num_contexts = batch_size // group_size
@@ -243,22 +277,27 @@ class TokenReversal:
         labels = torch.stack(all_lab, dim=1)      # [N, K, H]
 
         # Filter zero-variance groups (continuous rewards need std, not sum)
-        has_var = rewards.std(1) > 1e-6
-        if has_var.sum() == 0:
-            has_var[:] = True
+        raw_keep = rewards.std(1) > 1e-6
+        informative_rate = raw_keep.float().mean().item()
+        fallback = raw_keep.sum() == 0
+        if fallback:
+            raw_keep[:] = True
 
-        n_valid = has_var.sum().item()
+        n_valid = raw_keep.sum().item()
         K = group_size
         group_ids = torch.arange(n_valid, device=device).unsqueeze(1).expand(-1, K).reshape(-1)
 
         return Batch(
-            obs=obs[has_var].reshape(-1, obs.size(-1)),
-            actions=actions[has_var].reshape(-1, H),
-            rewards=rewards[has_var].reshape(-1),
-            labels=labels[has_var].reshape(-1, H),
-            actor_logp_a=logp_a[has_var].reshape(-1, H),
-            actor_baseline=baselines[has_var].reshape(-1),
-            group_ids=group_ids)
+            obs=obs[raw_keep].reshape(-1, obs.size(-1)),
+            actions=actions[raw_keep].reshape(-1, H),
+            rewards=rewards[raw_keep].reshape(-1),
+            labels=labels[raw_keep].reshape(-1, H),
+            actor_logp_a=logp_a[raw_keep].reshape(-1, H),
+            actor_baseline=baselines[raw_keep].reshape(-1),
+            group_ids=group_ids,
+            informative_group_rate=informative_rate,
+            retained_group_rate=n_valid / num_contexts,
+            used_group_fallback=fallback.item())
 
     def compute_logits(self, model: nn.Module, batch: Batch) -> torch.Tensor:
         """Teacher-forced on ACTOR-GENERATED prefix → logits at output positions."""
@@ -344,11 +383,18 @@ class MaskedReversal(TokenReversal):
         batch = super().sample_batch(model, batch_size, device, group_size)
         score_mask = torch.zeros_like(batch.actions, dtype=torch.bool)
         score_mask[:, -self.score_len:] = True
+        # actor_expected_reward from parent is full-sequence P(success), but
+        # masked reward is suffix-only. The exact suffix-marginal is not
+        # cheaply available, so we explicitly drop it and fall back to the
+        # collision baseline.
         return Batch(
             obs=batch.obs, actions=batch.actions, rewards=batch.rewards,
             labels=batch.labels, actor_logp_a=batch.actor_logp_a,
             actor_baseline=batch.actor_baseline, group_ids=batch.group_ids,
-            score_mask=score_mask)
+            score_mask=score_mask, actor_expected_reward=None,
+            informative_group_rate=batch.informative_group_rate,
+            retained_group_rate=batch.retained_group_rate,
+            used_group_fallback=batch.used_group_fallback)
 
     @torch.no_grad()
     def evaluate(self, model, device, num_batches=10, batch_size=100):
@@ -479,8 +525,10 @@ class LMBandit:
         model.train()
 
         rewards = self._compute_rewards(actions, labels, actor_lp, contexts, device)
+        p_success = actor_probs.gather(-1, labels.unsqueeze(-1)).squeeze(-1) if self.kl_weight <= 0 else None
         return Batch(obs=contexts, actions=actions, rewards=rewards,
-                     labels=labels, actor_logp_a=logp_a, actor_baseline=baseline)
+                     labels=labels, actor_logp_a=logp_a, actor_baseline=baseline,
+                     actor_expected_reward=p_success)
 
     def _sample_grouped(self, model, batch_size, group_size, device) -> Batch:
         """K actions per context for DAPO. Same pattern as MNISTBandit._sample_grouped."""
@@ -503,25 +551,30 @@ class LMBandit:
 
         # Filter on raw correctness BEFORE applying KL penalty
         raw_correct = (actions == labels.unsqueeze(1)).float()
-        has_mix = (raw_correct.sum(1) > 0) & (raw_correct.sum(1) < group_size)
-        if has_mix.sum() == 0:
-            has_mix[:] = True
+        raw_keep = (raw_correct.sum(1) > 0) & (raw_correct.sum(1) < group_size)
+        informative_rate = raw_keep.float().mean().item()
+        fallback = raw_keep.sum() == 0
+        if fallback:
+            raw_keep[:] = True
         rewards = self._compute_rewards(actions, labels, actor_lp, contexts, device)
 
         K = group_size
-        n_valid = has_mix.sum().item()
+        n_valid = raw_keep.sum().item()
 
-        contexts_f = contexts[has_mix].unsqueeze(1).expand(-1, K, -1).reshape(-1, C)
-        labels_f = labels[has_mix].unsqueeze(1).expand(-1, K).reshape(-1)
-        actions_f = actions[has_mix].reshape(-1)
-        rewards_f = rewards[has_mix].reshape(-1)
-        logp_a_f = actor_lp[has_mix].gather(-1, actions[has_mix]).reshape(-1)
-        baseline_f = actor_bl[has_mix].unsqueeze(1).expand(-1, K).reshape(-1)
+        contexts_f = contexts[raw_keep].unsqueeze(1).expand(-1, K, -1).reshape(-1, C)
+        labels_f = labels[raw_keep].unsqueeze(1).expand(-1, K).reshape(-1)
+        actions_f = actions[raw_keep].reshape(-1)
+        rewards_f = rewards[raw_keep].reshape(-1)
+        logp_a_f = actor_lp[raw_keep].gather(-1, actions[raw_keep]).reshape(-1)
+        baseline_f = actor_bl[raw_keep].unsqueeze(1).expand(-1, K).reshape(-1)
         group_ids = torch.arange(n_valid, device=device).unsqueeze(1).expand(-1, K).reshape(-1)
 
         return Batch(obs=contexts_f, actions=actions_f, rewards=rewards_f,
                      labels=labels_f, actor_logp_a=logp_a_f,
-                     actor_baseline=baseline_f, group_ids=group_ids)
+                     actor_baseline=baseline_f, group_ids=group_ids,
+                     informative_group_rate=informative_rate,
+                     retained_group_rate=n_valid / num_contexts,
+                     used_group_fallback=fallback.item())
 
     def compute_logits(self, model: nn.Module, batch: Batch) -> torch.Tensor:
         return model(batch.obs)[:, -1, :]
