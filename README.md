@@ -4,17 +4,17 @@ Playground for exploring RL ideas, both from the literature and personal explora
 
 ## The meta question
 
-Standard PG may be optimizing the wrong local object. The real question is: **what is the right influence function over sampled trajectories and tokens, if the goal is fastest true improvement per unit of online budget and KL budget?**
+**What is the right influence function over sampled trajectories and tokens, if the goal is fastest improvement per unit of online budget and KL budget?**
 
-Current methods each solve one piece — PPO constrains update size, GRPO removes the value model, DPO goes offline, coverage papers argue for online data, Q* argues for token-level credit. But none address influence allocation from first principles: which samples and tokens should get gradient budget at all, and how much.
+Current methods each address a piece of this — PPO constrains update size, GRPO removes the value model, DPO moves offline, coverage papers argue for online data, Q* targets token-level credit. Influence allocation — which samples and tokens should receive gradient budget, and how much — remains underexplored as a first-principles question.
 
 ### Three budgets
 
-LLM RL has a scarce effective update budget. Past samples are computationally cheap to reuse but statistically not free — they become stale, go off-support, replay reward noise, and give poor token-level credit.
+LLM RL operates under three distinct scarce budgets. Past samples are computationally cheap to reuse but statistically not free — they become stale, go off-support, replay reward noise, and provide poor token-level credit.
 
-- **Rollout budget**: expensive fresh on-policy data
+- **Rollout budget**: fresh on-policy data (generation-bound)
 - **Update budget**: backward/optimizer/KL budget on existing data
-- **Support budget**: how far current data still tells you something useful about the current policy
+- **Support budget**: how far current data remains informative about the current policy
 
 ### Five separable problems
 
@@ -24,9 +24,9 @@ LLM RL has a scarce effective update budget. Past samples are computationally ch
 4. **Conservatism under uncertainty** — how to avoid rewarding proxy mistakes?
 5. **Optimization geometry** — how do KL, clipping, normalization, staleness distort the update?
 
-DG (delight = advantage x surprisal) shows that the default answer to #1 — weight by advantage alone — is wrong. The genuine research directions are where influence allocation interacts with the other four: token-level delight for credit assignment, uncertainty-aware delight for conservatism, coverage-aware allocation for support, and staleness-aware gating for geometry.
+DG (delight = advantage x surprisal) addresses #1 by gating gradient terms with the interaction of reward signal and action probability. It connects to the Kelly criterion (log-optimal budget allocation across contexts), mirror descent (asymmetric trust regions that distinguish breakthroughs from blunders), and variational inference (the sigmoid gate as the optimal latent variable in max-entropy EM for policy search).
 
-The strongest path is not "improve DG a bit" but to build a theory of influence allocation for online LLM RL.
+The interesting directions are where influence allocation interacts with the other four: token-level delight for credit granularity, uncertainty-aware weighting for conservatism, coverage-aware allocation for support, and staleness-aware gating for optimization geometry.
 
 ## Experiments
 
