@@ -327,10 +327,8 @@ class LMBandit:
         self.num_actions = self.vocab_size
 
         raw = load_dataset('wikitext', 'wikitext-2-raw-v1')
-        self.train_tokens = torch.tensor(tokenizer.encode(
-            '\n'.join(t for t in raw['train']['text'] if t.strip())), dtype=torch.long)
-        self.test_tokens = torch.tensor(tokenizer.encode(
-            '\n'.join(t for t in raw['test']['text'] if t.strip())), dtype=torch.long)
+        self.train_tokens = self._tokenize_split(raw['train'], tokenizer)
+        self.test_tokens = self._tokenize_split(raw['test'], tokenizer)
 
         self._test_difficulty = None
         self.ref_model = None
@@ -338,6 +336,12 @@ class LMBandit:
         print(f'LMBandit: {model_name}, vocab={self.vocab_size}, '
               f'train={len(self.train_tokens)}, test={len(self.test_tokens)}, '
               f'context_len={context_len}, kl_weight={kl_weight}')
+
+    @staticmethod
+    def _tokenize_split(split, tokenizer):
+        chunks = [torch.tensor(tokenizer.encode(t), dtype=torch.long)
+                  for t in split['text'] if t.strip()]
+        return torch.cat(chunks)
 
     def make_model(self) -> nn.Module:
         from transformers import AutoModelForCausalLM

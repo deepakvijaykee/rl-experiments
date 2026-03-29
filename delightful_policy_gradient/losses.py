@@ -196,19 +196,16 @@ class KondoLoss:
 
 
 class LogGrowthLoss:
-    """Kelly-optimal PG via success-conditional inverse-propensity weighting.
+    """Kelly-optimal PG via inverse-propensity weighting on exact-match success.
 
-    The CE (Kelly) gradient is ∇log π(y*|x) — computable only when y* is known.
-    In bandit feedback, y* is revealed only when R=1 (correct action sampled).
+    Theoretically grounded only for binary exact-match one-step bandits
+    (MNIST, LM next-token with kl_weight=0). The derivation requires:
+    R=1 reveals the correct label, advantage is unshaped binary reward.
 
-    Applying 1/π(a) to successes cancels PG's implicit p-weighting across
-    contexts, recovering the CE direction. Failures get weight=1 (standard PG)
-    because there's no CE gradient to recover from wrong actions.
-
-    The original LogGrowth applied 1/π(a) to ALL samples, which amplified
-    rare wrong actions by up to 800× and diverged. This version is stable
-    because 1/π(a) for successes is bounded by 1/π(y*), which shrinks as
-    the model improves.
+    With KL-shaped rewards or on sequence tasks, the success criterion
+    (actions == labels) and the advantage signal (shaped reward) diverge.
+    Use DG instead, which achieves the same directional correction stably
+    without these regime restrictions.
     """
     name = 'LogGrowth'
 
@@ -218,8 +215,11 @@ class LogGrowthLoss:
     def __call__(self, logits, batch):
         logp_a, advantage = _pg_core(logits, batch, self.baseline)
 
-        # Kelly correction: 1/π(a) for successes, 1 for failures
-        is_success = (batch.rewards > 0.5).float()
+        # Success from raw task outcome, not shaped rewards
+        raw_success = (batch.actions == batch.labels)
+        if raw_success.dim() > 1:
+            raw_success = raw_success.all(dim=-1)  # full-sequence match
+        is_success = raw_success.float()
         while is_success.dim() < logp_a.dim():
             is_success = is_success.unsqueeze(-1)
         inv_pi = torch.exp(-logp_a.detach())
@@ -229,6 +229,51 @@ class LogGrowthLoss:
         return loss, {
             'reward': batch.rewards.mean().item(),
             'weight_mean': weight.mean().item(),
+        }
+
+
+class DGTokenCreditLoss:
+    """DG with per-token return-to-go credit assignment.
+
+    Instead of broadcasting one sequence reward to all tokens, each token
+    gets credit based on how many remaining tokens the actor got correct.
+    Token t's return-to-go = mean(correct[t:H]).
+
+    This tests whether token-level delight outperforms sequence-level delight.
+    Only meaningful for sequential tasks with batch.actions [B, T] and
+    batch.labels [B, T].
+    """
+    name = 'DGToken'
+
+    def __init__(self, eta: float = 1.0):
+        self.eta = eta
+
+    def __call__(self, logits, batch):
+        log_probs = F.log_softmax(logits, dim=-1)
+        probs = F.softmax(logits, dim=-1)
+        logp_a = gather_log_probs(log_probs, batch.actions)
+
+        # Per-token return-to-go: fraction correct from position t onward.
+        # Only meaningful for sequential tasks with [B, T] actions and labels.
+        assert batch.actions.dim() == 2, \
+            'DGToken requires sequential tasks with [B, T] actions'
+        correct = (batch.actions == batch.labels).float()  # [B, T]
+        H = correct.shape[1]
+        counts = torch.arange(H, 0, -1, device=correct.device).float()
+        rtg = correct.flip(1).cumsum(1).flip(1) / counts  # [B, T]
+
+        baseline = (probs ** 2).sum(-1)  # [B, T]
+        advantage = rtg - baseline
+
+        surprisal = -logp_a
+        delight = advantage * surprisal
+        gate = torch.sigmoid(delight / self.eta)
+
+        loss = -(logp_a * (gate * advantage).detach()).mean()
+        return loss, {
+            'reward': batch.rewards.mean().item(),
+            'rtg_mean': rtg.mean().item(),
+            'gate_mean': gate.mean().item(),
         }
 
 

@@ -168,6 +168,7 @@ LOSSES = {
     'DG': lambda c: L.DGLoss(eta=c.eta, baseline=c.baseline),
     'Kondo': lambda c: L.KondoLoss(eta=c.eta, keep_ratio=c.kondo_keep, baseline=c.baseline),
     'LogGrowth': lambda c: L.LogGrowthLoss(baseline=c.baseline),
+    'DGToken': lambda c: L.DGTokenCreditLoss(eta=c.eta),
     'DAPO': lambda c: L.DAPOLoss(clip_low=c.clip_low, clip_high=c.clip_high),
     'PMDMean': lambda c: L.PMDMeanLoss(tau=c.eta),
 }
