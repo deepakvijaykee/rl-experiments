@@ -9,6 +9,7 @@ From the literature:
   DG         — Delightful Policy Gradient (Osband 2026)
   Kondo      — compute-efficient DG ("Does This Gradient Spark Joy?", Osband 2026)
   DAPO       — Decoupled clip + dynamic sampling (ByteDance, NeurIPS 2025)
+  MaxRL      — ML-optimal per-group mean normalization, binary only (Tajwar et al. 2026)
   PMDMean    — Policy Mirror Descent with mean-reward partition approx (Kimi k1.5 lineage, 2025)
 
 logits shape matches batch.actions:
@@ -198,14 +199,12 @@ class KondoLoss:
 class LogGrowthLoss:
     """Kelly-optimal PG via inverse-propensity weighting on exact-match success.
 
-    Theoretically grounded only for binary exact-match one-step bandits
+    Diagnostic loss, valid only for binary exact-match one-step bandits
     (MNIST, LM next-token with kl_weight=0). The derivation requires:
-    R=1 reveals the correct label, advantage is unshaped binary reward.
+    R in {0,1}, success reveals the correct label, advantage is unshaped.
 
-    With KL-shaped rewards or on sequence tasks, the success criterion
-    (actions == labels) and the advantage signal (shaped reward) diverge.
-    Use DG instead, which achieves the same directional correction stably
-    without these regime restrictions.
+    Outside this regime, use DG instead, which achieves the same directional
+    correction via a bounded gate without these restrictions.
     """
     name = 'LogGrowth'
 
@@ -213,15 +212,13 @@ class LogGrowthLoss:
         self.baseline = baseline
 
     def __call__(self, logits, batch):
+        assert batch.actions.dim() == 1, \
+            'LogGrowth is only valid for one-step bandits (actions [B], not sequences)'
+        assert ((batch.rewards == 0) | (batch.rewards == 1)).all(), \
+            'LogGrowth requires binary rewards (R in {0,1}); shaped rewards (e.g. kl_weight>0) are unsupported'
         logp_a, advantage = _pg_core(logits, batch, self.baseline)
 
-        # Success from raw task outcome, not shaped rewards
-        raw_success = (batch.actions == batch.labels)
-        if raw_success.dim() > 1:
-            raw_success = raw_success.all(dim=-1)  # full-sequence match
-        is_success = raw_success.float()
-        while is_success.dim() < logp_a.dim():
-            is_success = is_success.unsqueeze(-1)
+        is_success = (batch.actions == batch.labels).float()
         inv_pi = torch.exp(-logp_a.detach())
         weight = is_success * inv_pi + (1 - is_success)
 
@@ -238,6 +235,16 @@ class DGTokenCreditLoss:
     Instead of broadcasting one sequence reward to all tokens, each token
     gets credit based on how many remaining tokens the actor got correct.
     Token t's return-to-go = mean(correct[t:H]).
+
+    When batch.score_mask is present, the credit signal uses masked
+    reward semantics:
+      - Only scored positions count as correct in the rtg numerator
+      - The rtg denominator counts remaining scored positions, not all
+      - Baseline is zeroed at unscored positions (no advantage there)
+    Note: in autoregressive tasks, unscored prefix tokens still causally
+    condition scored suffix tokens, so they may still deserve some
+    gradient indirectly. This is a partial-reward credit benchmark,
+    not an oracle where only scored positions matter.
 
     This tests whether token-level delight outperforms sequence-level delight.
     Only meaningful for sequential tasks with batch.actions [B, T] and
@@ -258,11 +265,23 @@ class DGTokenCreditLoss:
         assert batch.actions.dim() == 2, \
             'DGToken requires sequential tasks with [B, T] actions'
         correct = (batch.actions == batch.labels).float()  # [B, T]
-        H = correct.shape[1]
-        counts = torch.arange(H, 0, -1, device=correct.device).float()
+
+        if batch.score_mask is not None:
+            mask_f = batch.score_mask.float()  # [B, T]
+            # Numerator: only scored positions count as correct
+            correct = correct * mask_f
+            # Denominator: remaining scored positions from t onward
+            counts = mask_f.flip(1).cumsum(1).flip(1).clamp(min=1)  # [B, T]
+        else:
+            H = correct.shape[1]
+            counts = torch.arange(H, 0, -1, device=correct.device).float()
+
         rtg = correct.flip(1).cumsum(1).flip(1) / counts  # [B, T]
 
         baseline = (probs ** 2).sum(-1)  # [B, T]
+        # Zero baseline at unscored positions so they get zero advantage
+        if batch.score_mask is not None:
+            baseline = baseline * mask_f
         advantage = rtg - baseline
 
         surprisal = -logp_a
@@ -322,6 +341,55 @@ class DAPOLoss:
         loss = -surrogate.sum() / max(surrogate.numel(), 1)
 
         return loss, {'reward': batch.rewards.mean().item()}
+
+
+class MaxRLLoss:
+    """Maximum likelihood RL via per-group mean-reward normalization.
+
+    Diagnostic comparator for binary-reward grouped settings.
+    Tajwar et al. 2026, arXiv:2602.02710. Normalizing advantage by
+    mean_reward (= K/N) instead of std makes the gradient an unbiased
+    estimate of the ML gradient. Weight function w(p) = 1/p gives hard
+    problems more gradient budget.
+
+    Valid regime: binary rewards with grouped rollouts (group_size > 1).
+    For continuous rewards, the ML connection breaks and 1/mean is not
+    a principled weighting. Use DG instead outside the binary regime.
+    """
+    name = 'MaxRL'
+
+    def __init__(self, iw_cap: float = 10.0):
+        self.iw_cap = iw_cap
+
+    def __call__(self, logits, batch):
+        log_probs = F.log_softmax(logits, dim=-1)
+        logp_a = gather_log_probs(log_probs, batch.actions)
+
+        # Per-group mean normalization: the core MaxRL mechanism.
+        # For binary rewards, 1/mean = N/K, weighting each success by 1/K
+        # instead of 1/N -- an unbiased ML gradient estimator.
+        advantage = batch.rewards.clone()
+        assert batch.group_ids is not None, \
+            'MaxRL requires grouped rollouts (group_size > 1)'
+        assert ((batch.rewards == 0) | (batch.rewards == 1)).all(), \
+            'MaxRL requires binary rewards (R in {0,1})'
+        for gid in batch.group_ids.unique():
+            mask = batch.group_ids == gid
+            grp = advantage[mask]
+            mean_r = grp.mean()
+            advantage[mask] = (grp - mean_r) / (mean_r + 1e-8)
+
+        while advantage.dim() < logp_a.dim():
+            advantage = advantage.unsqueeze(-1)
+
+        log_iw = logp_a - batch.actor_logp_a
+        iw = torch.exp(log_iw.clamp(max=math.log(self.iw_cap)))
+
+        loss = -(logp_a * (advantage * iw).detach()).mean()
+        return loss, {
+            'reward': batch.rewards.mean().item(),
+            'iw_mean': iw.mean().item(),
+        }
 
 
 class PMDMeanLoss:

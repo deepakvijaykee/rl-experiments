@@ -38,6 +38,7 @@ class Batch:
     actor_logp_a: torch.Tensor   # [B] or [B, T]
     actor_baseline: torch.Tensor  # [B]
     group_ids: torch.Tensor | None = None
+    score_mask: torch.Tensor | None = None  # [B, T] bool: which positions are scored
 
     def to(self, device) -> 'Batch':
         return Batch(
@@ -45,7 +46,8 @@ class Batch:
             rewards=self.rewards.to(device), labels=self.labels.to(device),
             actor_logp_a=self.actor_logp_a.to(device),
             actor_baseline=self.actor_baseline.to(device),
-            group_ids=self.group_ids.to(device) if self.group_ids is not None else None)
+            group_ids=self.group_ids.to(device) if self.group_ids is not None else None,
+            score_mask=self.score_mask.to(device) if self.score_mask is not None else None)
 
     def select(self, mask: torch.Tensor) -> 'Batch':
         return Batch(
@@ -53,7 +55,8 @@ class Batch:
             rewards=self.rewards[mask], labels=self.labels[mask],
             actor_logp_a=self.actor_logp_a[mask],
             actor_baseline=self.actor_baseline[mask],
-            group_ids=self.group_ids[mask] if self.group_ids is not None else None)
+            group_ids=self.group_ids[mask] if self.group_ids is not None else None,
+            score_mask=self.score_mask[mask] if self.score_mask is not None else None)
 
 
 # ── MNIST Contextual Bandit ──────────────────────────────────────────────────
@@ -293,6 +296,72 @@ class TokenReversal:
             total_correct += (generated == target_tokens).float().sum().item()
             total_tokens += batch_size * H
         return {'test_error': 1.0 - total_correct / total_tokens}
+
+
+# ── Masked Reversal ─────────────────────────────────────────────────────────
+
+
+class MaskedReversal(TokenReversal):
+    """Partial-reward autoregressive credit benchmark.
+
+    Reversal where only the last score_len output positions affect reward.
+    The model must generate all H positions autoregressively but doesn't
+    know which positions are scored.
+
+    Note: this is NOT a benchmark where only scored positions deserve
+    gradient. In an autoregressive model, unscored prefix tokens causally
+    condition the scored suffix. The correct claim is weaker: DGToken
+    should concentrate more budget on tokens that most affect future
+    scored reward.
+    """
+
+    def __init__(self, vocab_size: int, seq_len: int, score_len: int):
+        super().__init__(vocab_size, seq_len)
+        assert 1 <= score_len <= seq_len
+        self.score_len = score_len
+
+    def _rollout(self, model, input_tokens, device):
+        actions, logp_a, baseline, _, obs, targets = super()._rollout(
+            model, input_tokens, device)
+        scored = actions[:, -self.score_len:] == targets[:, -self.score_len:]
+        rewards = scored.float().mean(dim=1)
+        return actions, logp_a, baseline, rewards, obs, targets
+
+    def sample_batch(self, model, batch_size, device, group_size=1):
+        batch = super().sample_batch(model, batch_size, device, group_size)
+        score_mask = torch.zeros_like(batch.actions, dtype=torch.bool)
+        score_mask[:, -self.score_len:] = True
+        return Batch(
+            obs=batch.obs, actions=batch.actions, rewards=batch.rewards,
+            labels=batch.labels, actor_logp_a=batch.actor_logp_a,
+            actor_baseline=batch.actor_baseline, group_ids=batch.group_ids,
+            score_mask=score_mask)
+
+    @torch.no_grad()
+    def evaluate(self, model, device, num_batches=10, batch_size=100):
+        H, M, S = self.seq_len, self.vocab_size, self.score_len
+        scored_correct, scored_total = 0, 0
+        unscored_correct, unscored_total = 0, 0
+        model.eval()
+        for _ in range(num_batches):
+            input_tokens = torch.randint(M, (batch_size, H), device=device)
+            target_tokens = input_tokens.flip(1)
+            sep = torch.full((batch_size, 1), self.sep_token, device=device, dtype=torch.long)
+            prefix = torch.cat([input_tokens, sep], dim=1)
+            for _ in range(H):
+                next_token = model(prefix)[:, -1].argmax(dim=-1)
+                prefix = torch.cat([prefix, next_token.unsqueeze(1)], dim=1)
+            generated = prefix[:, H + 1:]
+            correct = (generated == target_tokens).float()
+            scored_correct += correct[:, -S:].sum().item()
+            scored_total += batch_size * S
+            if S < H:
+                unscored_correct += correct[:, :-S].sum().item()
+                unscored_total += batch_size * (H - S)
+        result = {'test_error': 1.0 - scored_correct / scored_total}
+        if unscored_total > 0:
+            result['test_error_unscored'] = 1.0 - unscored_correct / unscored_total
+        return result
 
 
 # ── LM Bandit ────────────────────────────────────────────────────────────────

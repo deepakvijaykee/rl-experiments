@@ -11,7 +11,7 @@ import torch
 import torch.nn.functional as F
 
 from . import losses as L
-from .tasks import Batch, MNISTBandit, TokenReversal, LMBandit
+from .tasks import Batch, MNISTBandit, TokenReversal, MaskedReversal, LMBandit
 
 
 # ── Experience Queue ─────────────────────────────────────────────────────────
@@ -89,8 +89,8 @@ def train_one_seed(task, loss_fn, model, config, seed, device) -> list[dict]:
     # Compute difficulty terciles from the initial pre-trained model, before training
     task.compute_difficulty(model, device)
 
-    # Determine group_size for DAPO
-    group_size = config.dapo_group_size if config.method == 'DAPO' else 1
+    # Determine group_size for grouped methods (DAPO, MaxRL)
+    group_size = config.group_size if config.method in ('DAPO', 'MaxRL') else 1
     assert config.batch_size % group_size == 0, \
         f'batch_size ({config.batch_size}) must be divisible by group_size ({group_size})'
 
@@ -156,6 +156,8 @@ TASKS = {
     'mnist': lambda c: MNISTBandit(),
     'token_reversal': lambda c: TokenReversal(
         vocab_size=c.vocab_size, seq_len=c.seq_len),
+    'masked_reversal': lambda c: MaskedReversal(
+        vocab_size=c.vocab_size, seq_len=c.seq_len, score_len=c.score_len),
     'lm_bandit': lambda c: LMBandit(
         model_name=c.model_name, context_len=c.context_len,
         kl_weight=c.kl_weight),
@@ -170,12 +172,15 @@ LOSSES = {
     'LogGrowth': lambda c: L.LogGrowthLoss(baseline=c.baseline),
     'DGToken': lambda c: L.DGTokenCreditLoss(eta=c.eta),
     'DAPO': lambda c: L.DAPOLoss(clip_low=c.clip_low, clip_high=c.clip_high),
+    'MaxRL': lambda c: L.MaxRLLoss(iw_cap=c.iw_cap),
     'PMDMean': lambda c: L.PMDMeanLoss(tau=c.eta),
 }
 
 MODEL_BUILDERS = {
     'mnist': lambda c, task: task.make_model(hidden=c.hidden),
     'token_reversal': lambda c, task: task.make_model(
+        d_model=c.d_model, nhead=c.nhead, num_layers=c.num_layers),
+    'masked_reversal': lambda c, task: task.make_model(
         d_model=c.d_model, nhead=c.nhead, num_layers=c.num_layers),
     'lm_bandit': lambda c, task: task.make_model(),
 }
@@ -205,13 +210,14 @@ class Config:
     iw_cap: float = 10.0
     # Kondo
     kondo_keep: float = 0.5
-    # DAPO
+    # DAPO / MaxRL
     clip_low: float = 0.2
     clip_high: float = 0.28
-    dapo_group_size: int = 4
-    # Token reversal
+    group_size: int = 4
+    # Token reversal / masked reversal
     vocab_size: int = 2
     seq_len: int = 10
+    score_len: int = 5
     d_model: int = 64
     nhead: int = 2
     num_layers: int = 2
