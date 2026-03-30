@@ -28,7 +28,7 @@ class Batch:
 
     Stores sufficient statistics instead of full actor distributions:
       actor_logp_a: [B] or [B, T] — log-prob of taken action under actor policy
-      actor_baseline: [B] — Σπ(a)² expected baseline under actor policy
+      actor_baseline: [B] or [B, T] — Σπ(a)² per-slot baseline under actor policy
     This scales with batch size, not vocab size (75,000× smaller for Qwen).
     """
     obs: torch.Tensor
@@ -118,7 +118,7 @@ class MNISTBandit:
                      actor_expected_reward=p_success)
 
     def _sample_grouped(self, model, batch_size, group_size, device) -> Batch:
-        """K actions per context for DAPO. Returns flattened batch with group_ids."""
+        """K rollouts per context for grouped methods. Returns flattened batch with group_ids."""
         num_contexts = batch_size // group_size
         idx = torch.randint(len(self.train_images), (num_contexts,))
         images = self.train_images[idx].to(device)
@@ -223,7 +223,7 @@ class TokenReversal:
 
         actions = torch.stack(generated, dim=1)           # [B, H]
         logp_a = torch.stack(per_token_logp, dim=1)       # [B, H]
-        baseline = torch.stack(per_token_baseline, dim=1).mean(dim=1)  # [B]
+        baseline = torch.stack(per_token_baseline, dim=1)  # [B, T]
         correct = (actions == target_tokens).float()
         if self.binary_reward:
             rewards = correct.all(dim=1).float()  # exact sequence match
@@ -258,7 +258,7 @@ class TokenReversal:
                          labels=labels, actor_logp_a=logp_a, actor_baseline=baseline,
                          actor_expected_reward=p_success)
 
-        # K rollouts per input — how DAPO/GRPO work in practice
+        # K rollouts per input for grouped methods (MaxRL, etc.)
         num_contexts = batch_size // group_size
         input_tokens = torch.randint(M, (num_contexts, H), device=device)
 
@@ -293,7 +293,7 @@ class TokenReversal:
             rewards=rewards[raw_keep].reshape(-1),
             labels=labels[raw_keep].reshape(-1, H),
             actor_logp_a=logp_a[raw_keep].reshape(-1, H),
-            actor_baseline=baselines[raw_keep].reshape(-1),
+            actor_baseline=baselines[raw_keep].reshape(-1, H),
             group_ids=group_ids,
             informative_group_rate=informative_rate,
             retained_group_rate=n_valid / num_contexts,
@@ -473,8 +473,14 @@ class LMBandit:
 
     @staticmethod
     def _tokenize_split(split, tokenizer):
-        chunks = [torch.tensor(tokenizer.encode(t), dtype=torch.long)
-                  for t in split['text'] if t.strip()]
+        # Encode incrementally with newline separators so the tokenizer sees
+        # natural paragraph boundaries without building one giant string
+        chunks = []
+        for t in split['text']:
+            if t.strip():
+                prefix = '\n' if chunks else ''
+                chunks.append(torch.tensor(
+                    tokenizer.encode(prefix + t), dtype=torch.long))
         return torch.cat(chunks)
 
     def make_model(self) -> nn.Module:
@@ -504,6 +510,21 @@ class LMBandit:
             kl = actor_lp.gather(-1, idx) - ref_lp.gather(-1, idx)
             return base - self.kl_weight * kl.reshape_as(base)
 
+    def _compute_expected_reward(self, actor_probs, actor_lp, labels, contexts, device):
+        """Exact E[R|x] under the actor. Returns [N] tensor.
+
+        For kl_weight=0: pi(label|x).
+        For kl_weight>0: pi(label|x) - beta * KL(pi || ref).
+        """
+        p_label = actor_probs.gather(-1, labels.unsqueeze(-1)).squeeze(-1)
+        if self.kl_weight <= 0 or self.ref_model is None:
+            return p_label
+        with torch.no_grad():
+            self.ref_model.to(device)
+            ref_lp = F.log_softmax(self.ref_model(contexts)[:, -1, :].float(), dim=-1)
+            kl = (actor_probs * (actor_lp - ref_lp)).sum(-1)
+        return p_label - self.kl_weight * kl
+
     def sample_batch(self, model: nn.Module, batch_size: int,
                      device: torch.device, group_size: int = 1) -> Batch:
         if group_size > 1:
@@ -525,13 +546,14 @@ class LMBandit:
         model.train()
 
         rewards = self._compute_rewards(actions, labels, actor_lp, contexts, device)
-        p_success = actor_probs.gather(-1, labels.unsqueeze(-1)).squeeze(-1) if self.kl_weight <= 0 else None
+        expected_reward = self._compute_expected_reward(
+            actor_probs, actor_lp, labels, contexts, device)
         return Batch(obs=contexts, actions=actions, rewards=rewards,
                      labels=labels, actor_logp_a=logp_a, actor_baseline=baseline,
-                     actor_expected_reward=p_success)
+                     actor_expected_reward=expected_reward)
 
     def _sample_grouped(self, model, batch_size, group_size, device) -> Batch:
-        """K actions per context for DAPO. Same pattern as MNISTBandit._sample_grouped."""
+        """K rollouts per context for grouped methods. Same pattern as MNISTBandit._sample_grouped."""
         C = self.context_len
         num_contexts = batch_size // group_size
         starts = torch.randint(0, len(self.train_tokens) - C - 1, (num_contexts,))
@@ -569,9 +591,14 @@ class LMBandit:
         baseline_f = actor_bl[raw_keep].unsqueeze(1).expand(-1, K).reshape(-1)
         group_ids = torch.arange(n_valid, device=device).unsqueeze(1).expand(-1, K).reshape(-1)
 
+        expected_reward = self._compute_expected_reward(
+            actor_probs, actor_lp, labels, contexts, device)
+        expected_reward_f = expected_reward[raw_keep].unsqueeze(1).expand(-1, K).reshape(-1)
+
         return Batch(obs=contexts_f, actions=actions_f, rewards=rewards_f,
                      labels=labels_f, actor_logp_a=logp_a_f,
                      actor_baseline=baseline_f, group_ids=group_ids,
+                     actor_expected_reward=expected_reward_f,
                      informative_group_rate=informative_rate,
                      retained_group_rate=n_valid / num_contexts,
                      used_group_fallback=fallback.item())

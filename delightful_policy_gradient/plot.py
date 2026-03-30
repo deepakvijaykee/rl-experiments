@@ -31,7 +31,9 @@ def plot_delay_sweep(df: pd.DataFrame, output: str | None = None):
 
 def plot_final_vs_delay(df: pd.DataFrame, output: str | None = None):
     """Final test error vs delay for each method."""
-    final_df = df[df.step == df.step.max()]
+    # Use last recorded step per (method, delay, seed) since different
+    # delays may have different step ranges (warmup consumes early steps)
+    final_df = df.loc[df.groupby(['method', 'delay', 'seed']).step.idxmax()]
     mean_df = (final_df.groupby(['method', 'delay'])['test_error']
                .agg(['mean', 'sem']).reset_index())
 

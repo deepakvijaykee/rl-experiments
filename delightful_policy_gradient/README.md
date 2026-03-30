@@ -19,10 +19,11 @@ python -m delightful_policy_gradient.plot results.csv
 
 ## Methods
 
-CE, REINFORCE, PG, DG, Kondo, LogGrowth, DAPO, PMDMean
+CE, REINFORCE, PG, DG, Kondo, DGToken, LogGrowth, MaxRL, PMDMean
 
 ## Tasks
 
 - **mnist**: contextual bandit (10 actions)
-- **token_reversal**: autoregressive sequence reversal
+- **token_reversal**: autoregressive sequence reversal (fractional or binary reward)
+- **masked_reversal**: partial-reward variant (only scored suffix positions affect reward)
 - **lm_bandit**: next-token prediction with any HuggingFace causal LM

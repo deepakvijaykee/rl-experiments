@@ -89,34 +89,47 @@ def train_one_seed(task, loss_fn, model, config, seed, device) -> list[dict]:
     # Compute difficulty terciles from the initial pre-trained model, before training
     task.compute_difficulty(model, device)
 
-    # Determine group_size for grouped methods (DAPO, MaxRL)
-    group_size = config.group_size if config.method in ('DAPO', 'MaxRL') else 1
+    # Determine group_size for grouped methods
+    group_size = config.group_size if config.method == 'MaxRL' else 1
     assert config.batch_size % group_size == 0, \
         f'batch_size ({config.batch_size}) must be divisible by group_size ({group_size})'
 
-    # Initialize experience queue: fill with D batches from the initial model
+    # Unified loop: first `delay` steps are warmup (train on fresh data,
+    # fill queue). Remaining steps train on genuinely stale data.
+    # Total optimizer updates = num_steps regardless of delay.
     queue = ExperienceQueue(config.delay)
-    for _ in range(config.delay):
-        init_batch = task.sample_batch(model, config.batch_size, device,
-                                       group_size=group_size)
-        queue.push(init_batch)
 
     results = []
     for step in range(config.num_steps):
+        # Evaluate BEFORE training so step reflects the model's current state.
+        # Skip warmup (step < delay). Step in CSV is the absolute update index,
+        # so delay-sweep curves are directly comparable at the same x-axis value.
+        past_warmup = step >= config.delay
+        eval_due = past_warmup and (step - config.delay) % config.eval_every == 0
+        if eval_due:
+            model.eval()
+            with torch.amp.autocast('cuda', dtype=torch.bfloat16, enabled=autocast):
+                eval_metrics = task.evaluate(model, device)
+
         # Sample fresh batch with current model (acts as actor)
         fresh_batch = task.sample_batch(model, config.batch_size, device,
                                         group_size=group_size)
         queue.push(fresh_batch)
-        batch = queue.get_stale(device)
 
-        # Kondo screens samples before the forward pass — this is where it saves compute
+        # Warmup: train on fresh data while filling the queue.
+        # After warmup: pop genuinely stale batch from queue.
+        if step < config.delay:
+            batch = fresh_batch
+        else:
+            batch = queue.get_stale(device)
+
+        # Kondo screens samples before the forward pass
         if config.method == 'Kondo':
             batch = batch.select(loss_fn.screen(batch))
 
         # Learner forward pass
         model.train()
         with torch.amp.autocast('cuda', dtype=torch.bfloat16, enabled=autocast):
-            # CE uses oracle logits (ground-truth prefix for sequential tasks)
             if config.method == 'CE':
                 logits = task.compute_logits_oracle(model, batch)
             else:
@@ -128,25 +141,21 @@ def train_one_seed(task, loss_fn, model, config, seed, device) -> list[dict]:
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
-        if step % config.eval_every == 0:
-            model.eval()
-            with torch.amp.autocast('cuda', dtype=torch.bfloat16, enabled=autocast):
-                eval_metrics = task.evaluate(model, device)
+        if eval_due:
             row = {'step': step, 'loss': loss.item(), **metrics, **eval_metrics}
             if batch.informative_group_rate is not None:
                 row['mixed_group_rate'] = batch.informative_group_rate
                 row['retained_group_rate'] = batch.retained_group_rate
                 row['group_fallback'] = float(batch.used_group_fallback)
 
-            if config.diagnostics and step % (config.eval_every * 5) == 0:
+            if config.diagnostics and (step - config.delay) % (config.eval_every * 5) == 0:
                 model.train()
                 logits_fn = task.compute_logits_oracle if config.method == 'CE' else task.compute_logits
                 row.update(compute_gradient_cosines(
                     model, task, batch, loss_fn, logits_fn, device))
-                model.eval()
 
             results.append(row)
-            if config.verbose and step % (config.eval_every * 10) == 0:
+            if config.verbose and (step - config.delay) % (config.eval_every * 10) == 0:
                 print(f'  step {step:5d}  test_error={eval_metrics["test_error"]:.4f}'
                       f'  loss={loss.item():.4f}')
 
@@ -177,7 +186,6 @@ LOSSES = {
     'Kondo': lambda c: L.KondoLoss(eta=c.eta, keep_ratio=c.kondo_keep, baseline=c.baseline),
     'LogGrowth': lambda c: L.LogGrowthLoss(baseline=c.baseline),
     'DGToken': lambda c: L.DGTokenCreditLoss(eta=c.eta),
-    'DAPO': lambda c: L.DAPOLoss(clip_low=c.clip_low, clip_high=c.clip_high),
     'MaxRL': lambda c: L.MaxRLLoss(iw_cap=c.iw_cap),
     'PMDMean': lambda c: L.PMDMeanLoss(tau=c.eta),
 }
@@ -216,9 +224,7 @@ class Config:
     iw_cap: float = 10.0
     # Kondo
     kondo_keep: float = 0.5
-    # DAPO / MaxRL
-    clip_low: float = 0.2
-    clip_high: float = 0.28
+    # MaxRL
     group_size: int = 4
     # Token reversal / masked reversal
     vocab_size: int = 2

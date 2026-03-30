@@ -8,7 +8,7 @@ From the literature:
   PG         — importance-weighted policy gradient
   DG         — Delightful Policy Gradient (Osband 2026)
   Kondo      — compute-efficient DG ("Does This Gradient Spark Joy?", Osband 2026)
-  DAPO       — Decoupled clip + dynamic sampling (ByteDance, NeurIPS 2025)
+  DGToken    — per-token return-to-go credit assignment (fractional reward only)
   MaxRL      — ML-optimal per-group mean normalization, binary only (Tajwar et al. 2026)
   PMDMean    — Policy Mirror Descent with mean-reward partition approx (Kimi k1.5 lineage, 2025)
 
@@ -27,17 +27,18 @@ import torch.nn.functional as F
 
 
 def compute_baseline(kind: str, probs: torch.Tensor) -> torch.Tensor:
-    """Baseline from current policy probs (no label access). Returns [B]."""
+    """Baseline from current policy probs (no label access).
+
+    Returns [B] for bandits, [B, T] for sequences. Per-token baselines
+    are kept separate to avoid future-action dependence: b_t depends on
+    state s_t (prefix up to t), not on a_t or later actions.
+    """
     if kind == 'zero':
         return torch.zeros(probs.shape[0], device=probs.device)
     if kind == 'constant':
         return torch.full((probs.shape[0],), 0.5, device=probs.device)
     if kind == 'expected':
-        # Σ π(a)² per action slot, then average down to [B]
-        per_slot = (probs ** 2).sum(-1)  # [B] or [B, T]
-        while per_slot.dim() > 1:
-            per_slot = per_slot.mean(-1)
-        return per_slot
+        return (probs ** 2).sum(-1)  # [B] for bandits, [B, T] for sequences
     assert False, f'Unknown baseline: {kind}'
 
 
@@ -60,12 +61,15 @@ def _pg_core(logits, batch, baseline_kind):
     # (binary-reward tasks with known labels), use it. This upgrades all
     # _pg_core methods: better control variate for REINFORCE/PG, correct
     # gate calibration for DG. On tasks where E[R|x] is not cheaply exact
-    # (fractional sequence reward), falls back to sum(pi^2).
+    # (fractional sequence reward), falls back to per-token sum(pi^2).
     if batch.actor_expected_reward is not None:
-        baseline = batch.actor_expected_reward                # [B]
+        baseline = batch.actor_expected_reward             # [B]
     else:
-        baseline = compute_baseline(baseline_kind, probs)  # [B]
-    advantage = batch.rewards - baseline                # [B]
+        baseline = compute_baseline(baseline_kind, probs)  # [B] or [B, T]
+    reward = batch.rewards                                 # [B]
+    while reward.dim() < baseline.dim():
+        reward = reward.unsqueeze(-1)                      # [B, 1] for [B, T] baseline
+    advantage = reward - baseline
     while advantage.dim() < logp_a.dim():
         advantage = advantage.unsqueeze(-1)
 
@@ -178,13 +182,17 @@ class KondoLoss:
         """
         actor_logp_a = batch.actor_logp_a
         baseline = batch.actor_expected_reward if batch.actor_expected_reward is not None else batch.actor_baseline
-        advantage = batch.rewards - baseline
+        reward = batch.rewards
+        while reward.dim() < baseline.dim():
+            reward = reward.unsqueeze(-1)
+        advantage = reward - baseline
         while advantage.dim() < actor_logp_a.dim():
             advantage = advantage.unsqueeze(-1)
         delight = advantage * (-actor_logp_a)
 
-        # Reduce to per-sequence score: max |delight| over token positions
-        per_sample = delight.abs()
+        # Reduce to per-sequence score: max delight over token positions.
+        # Rank by raw delight (highest = breakthroughs), not abs.
+        per_sample = delight
         while per_sample.dim() > 1:
             per_sample = per_sample.max(dim=-1).values
 
@@ -312,50 +320,6 @@ class DGTokenCreditLoss:
 
 
 # ── Field baselines ──────────────────────────────────────────────────────────
-
-
-class DAPOLoss:
-    """Decoupled clip and dynamic sampling policy optimization.
-
-    ByteDance, NeurIPS 2025, arXiv:2503.14476.
-    Key mechanisms:
-      - Asymmetric clipping: ε_low=0.2, ε_high=0.28 (more room for exploration)
-      - Token-level loss normalization (divide by total tokens, not per-sample avg)
-      - Per-GROUP advantage normalization when batch.group_ids is present
-        (K samples per prompt, advantages normalized within each group)
-      - Dynamic filtering of all-correct/all-incorrect groups (done in sample_batch)
-    """
-    name = 'DAPO'
-
-    def __init__(self, clip_low: float = 0.2, clip_high: float = 0.28):
-        self.clip_low = clip_low
-        self.clip_high = clip_high
-
-    def __call__(self, logits, batch):
-        log_probs = F.log_softmax(logits, dim=-1)
-        logp_a = gather_log_probs(log_probs, batch.actions)
-
-        # Per-group advantage normalization (faithful to DAPO)
-        advantage = batch.rewards.clone()
-        if batch.group_ids is not None:
-            for gid in batch.group_ids.unique():
-                mask = batch.group_ids == gid
-                grp = advantage[mask]
-                advantage[mask] = (grp - grp.mean()) / (grp.std() + 1e-8)
-        else:
-            advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-8)
-
-        while advantage.dim() < logp_a.dim():
-            advantage = advantage.unsqueeze(-1)
-
-        # Asymmetric clipped surrogate
-        ratio = torch.exp(logp_a - batch.actor_logp_a.detach())
-        clipped = torch.clamp(ratio, 1 - self.clip_low, 1 + self.clip_high)
-        surrogate = torch.min(ratio * advantage.detach(),
-                              clipped * advantage.detach())
-        loss = -surrogate.sum() / max(surrogate.numel(), 1)
-
-        return loss, {'reward': batch.rewards.mean().item()}
 
 
 class MaxRLLoss:
