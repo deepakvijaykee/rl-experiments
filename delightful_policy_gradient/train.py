@@ -100,6 +100,7 @@ def train_one_seed(task, loss_fn, model, config, seed, device) -> list[dict]:
     queue = ExperienceQueue(config.delay)
 
     results = []
+    consecutive_fallbacks = 0
     for step in range(config.num_steps):
         # Evaluate BEFORE training so step reflects the model's current state.
         # Skip warmup (step < delay). Step in CSV is the absolute update index,
@@ -114,21 +115,36 @@ def train_one_seed(task, loss_fn, model, config, seed, device) -> list[dict]:
         # Sample fresh batch with current model (acts as actor)
         fresh_batch = task.sample_batch(model, config.batch_size, device,
                                         group_size=group_size)
-        queue.push(fresh_batch)
 
-        # Warmup: train on fresh data while filling the queue.
-        # After warmup: pop genuinely stale batch from queue.
-        if step < config.delay:
+        if config.delay == 0:
             batch = fresh_batch
         else:
-            batch = queue.get_stale(device)
+            queue.push(fresh_batch)
+            # Warmup: train on fresh data while filling the queue.
+            # After warmup: pop genuinely stale batch from queue.
+            if step < config.delay:
+                batch = fresh_batch
+            else:
+                batch = queue.get_stale(device)
+
+        # Stop if grouped method is out of regime (sustained zero-signal)
+        if batch.used_group_fallback:
+            consecutive_fallbacks += 1
+            if consecutive_fallbacks >= 10:
+                print(f'  STOPPING: {consecutive_fallbacks} consecutive batches with no '
+                      f'mixed-reward groups. Method is out of regime.')
+                break
+        else:
+            consecutive_fallbacks = 0
 
         # Kondo screens samples before the forward pass
         if config.method == 'Kondo':
             batch = batch.select(loss_fn.screen(batch))
 
-        # Learner forward pass
-        model.train()
+        # Learner forward pass in eval mode: keeps dropout consistent with
+        # actor sampling (eval mode) so importance weights are exact at delay=0.
+        # Gradients still flow; eval only disables stochastic layers.
+        model.eval()
         with torch.amp.autocast('cuda', dtype=torch.bfloat16, enabled=autocast):
             if config.method == 'CE':
                 logits = task.compute_logits_oracle(model, batch)
@@ -149,7 +165,6 @@ def train_one_seed(task, loss_fn, model, config, seed, device) -> list[dict]:
                 row['group_fallback'] = float(batch.used_group_fallback)
 
             if config.diagnostics and (step - config.delay) % (config.eval_every * 5) == 0:
-                model.train()
                 logits_fn = task.compute_logits_oracle if config.method == 'CE' else task.compute_logits
                 row.update(compute_gradient_cosines(
                     model, task, batch, loss_fn, logits_fn, device))
@@ -182,6 +197,7 @@ LOSSES = {
     'CE': lambda c: L.CELoss(),
     'REINFORCE': lambda c: L.REINFORCELoss(baseline=c.baseline),
     'PG': lambda c: L.PGLoss(baseline=c.baseline, iw_cap=c.iw_cap),
+    'TrajPG': lambda c: L.TrajectoryPGLoss(baseline=c.baseline, iw_cap=c.iw_cap),
     'DG': lambda c: L.DGLoss(eta=c.eta, baseline=c.baseline),
     'Kondo': lambda c: L.KondoLoss(eta=c.eta, keep_ratio=c.kondo_keep, baseline=c.baseline),
     'LogGrowth': lambda c: L.LogGrowthLoss(baseline=c.baseline),
@@ -264,7 +280,7 @@ def run_config(config: Config) -> pd.DataFrame:
 
 def run_sweep(config: Config) -> pd.DataFrame:
     dfs = []
-    for method in ['REINFORCE', 'PG', 'DG']:
+    for method in ['REINFORCE', 'PG', 'TrajPG', 'DG', 'Kondo']:
         for delay in [0, 1, 3, 10, 30, 100]:
             cfg = dataclasses.replace(config, method=method, delay=delay)
             dfs.append(run_config(cfg))

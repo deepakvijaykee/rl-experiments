@@ -5,7 +5,8 @@ Each loss is a plain class with __call__(logits, batch) -> (loss, metrics_dict).
 From the literature:
   CE         — supervised cross-entropy oracle (upper bound)
   REINFORCE  — Williams 1992, no off-policy correction
-  PG         — importance-weighted policy gradient
+  PG         — per-token importance-weighted policy gradient (approximate on sequences)
+  TrajPG     — trajectory-level IW PG (exact off-policy on short sequences)
   DG         — Delightful Policy Gradient (Osband 2026)
   Kondo      — compute-efficient DG ("Does This Gradient Spark Joy?", Osband 2026)
   DGToken    — per-token return-to-go credit assignment (fractional reward only)
@@ -122,6 +123,41 @@ class PGLoss:
 
         log_iw = logp_a - batch.actor_logp_a
         iw = torch.exp(log_iw.clamp(max=math.log(self.iw_cap)))
+
+        loss = -(logp_a * (advantage * iw).detach()).mean()
+        return loss, {
+            'reward': batch.rewards.mean().item(),
+            'iw_mean': iw.mean().item(),
+        }
+
+
+class TrajectoryPGLoss:
+    """Trajectory-level importance-weighted PG for sequence tasks.
+
+    Uses the full trajectory ratio rho = exp(sum_t log(pi_t/mu_t))
+    instead of per-token ratios. Exact off-policy correction for
+    logged trajectories (before capping). Practical on short sequences
+    (seq_len <= 10) where the variance of the product is manageable.
+    On one-step bandits, collapses to PGLoss.
+    """
+    name = 'TrajPG'
+
+    def __init__(self, baseline: str = 'expected', iw_cap: float = 10.0):
+        self.baseline = baseline
+        self.iw_cap = iw_cap
+
+    def __call__(self, logits, batch):
+        logp_a, advantage = _pg_core(logits, batch, self.baseline)
+
+        if logp_a.dim() > 1:
+            # Sequence: trajectory-level ratio (product of per-token ratios)
+            log_traj_iw = (logp_a - batch.actor_logp_a).sum(dim=-1)  # [B]
+            traj_iw = torch.exp(log_traj_iw.clamp(max=math.log(self.iw_cap)))
+            iw = traj_iw.unsqueeze(-1).expand_as(logp_a)  # [B, T]
+        else:
+            # Bandit: same as PGLoss
+            log_iw = logp_a - batch.actor_logp_a
+            iw = torch.exp(log_iw.clamp(max=math.log(self.iw_cap)))
 
         loss = -(logp_a * (advantage * iw).detach()).mean()
         return loss, {

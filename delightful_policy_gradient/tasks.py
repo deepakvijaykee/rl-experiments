@@ -538,8 +538,8 @@ class LMBandit:
         model.eval()
         with torch.no_grad(), torch.amp.autocast('cuda', dtype=torch.bfloat16):
             actor_logits = model(contexts)[:, -1, :]
-            actor_probs = F.softmax(actor_logits.float(), dim=-1)
-            actor_lp = torch.log(actor_probs)
+            actor_lp = F.log_softmax(actor_logits.float(), dim=-1)
+            actor_probs = actor_lp.exp()
             actions = torch.distributions.Categorical(probs=actor_probs).sample()
             logp_a = actor_lp.gather(-1, actions.unsqueeze(-1)).squeeze(-1)
             baseline = (actor_probs ** 2).sum(-1)
@@ -563,8 +563,8 @@ class LMBandit:
         model.eval()
         with torch.no_grad(), torch.amp.autocast('cuda', dtype=torch.bfloat16):
             actor_logits = model(contexts)[:, -1, :]
-            actor_probs = F.softmax(actor_logits.float(), dim=-1)
-            actor_lp = torch.log(actor_probs)
+            actor_lp = F.log_softmax(actor_logits.float(), dim=-1)
+            actor_probs = actor_lp.exp()
             actor_bl = (actor_probs ** 2).sum(-1)  # [N]
             actions = torch.stack([
                 torch.distributions.Categorical(probs=actor_probs).sample()
