@@ -411,14 +411,15 @@ class PMDMeanLoss:
     """Policy Mirror Descent with mean-reward partition approximation.
 
     From the Kimi k1.5 lineage (Moonshot AI 2025, arXiv:2501.12599).
-    Proven equivalent to mirror descent with adaptive KL + χ² regularization
-    (arXiv:2602.05933).
+    Proven equivalent to mirror descent with adaptive KL + chi-squared
+    regularization (arXiv:2602.05933).
 
-    Regresses log-ratio toward mean-centered advantage:
-        L = E[(τ · log(π/π_old) - (r - mean(r)))²]
+    Regresses trajectory-level log-ratio toward context-centered reward:
+        L = E[(tau * log(pi/pi_old) - (r - E[r|x]))^2]
 
-    Unlike score-function PG, this is an L2 regression — no blunders from
-    the score function estimator, but also no delight-style influence shaping.
+    Uses exact E[R|x] when available (actor_expected_reward), falls back
+    to batch mean otherwise. On sequences, the log-ratio is summed across
+    tokens (trajectory-level), not regressed per-token.
     """
     name = 'PMDMean'
 
@@ -429,13 +430,17 @@ class PMDMeanLoss:
         log_probs = F.log_softmax(logits, dim=-1)
         logp_a = gather_log_probs(log_probs, batch.actions)
 
-        # Mean-centered advantage (the partition function approximation)
-        advantage = batch.rewards - batch.rewards.mean()
-        while advantage.dim() < logp_a.dim():
-            advantage = advantage.unsqueeze(-1)
+        # Context-conditional baseline: exact E[R|x] when available
+        if batch.actor_expected_reward is not None:
+            advantage = batch.rewards - batch.actor_expected_reward
+        else:
+            advantage = batch.rewards - batch.rewards.mean()
 
-        # L2 regression: fit τ·log_ratio to advantage
+        # Trajectory-level log-ratio for sequences
         log_ratio = logp_a - batch.actor_logp_a
+        if log_ratio.dim() > 1:
+            log_ratio = log_ratio.sum(dim=-1)  # [B]
+
         loss = ((self.tau * log_ratio - advantage.detach()) ** 2).mean()
 
         return loss, {

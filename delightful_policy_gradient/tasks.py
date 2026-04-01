@@ -497,32 +497,34 @@ class LMBandit:
                 p.requires_grad_(False)
         return wrapper
 
-    def _compute_rewards(self, actions, labels, actor_lp, contexts, device):
-        """Compute rewards with optional KL penalty. Handles [B] and [N, K] actions."""
-        base = (actions == (labels if actions.dim() == 1 else labels.unsqueeze(1))).float()
+    def _ref_log_probs(self, contexts, device):
+        """Reference model log-probs on contexts. Returns [N, V] or None."""
         if self.kl_weight <= 0 or self.ref_model is None:
-            return base
+            return None
         with torch.no_grad():
             self.ref_model.to(device)
-            ref_lp = F.log_softmax(self.ref_model(contexts)[:, -1, :].float(), dim=-1)
-            # reshape to 2D for gather: [N, 1] or [N, K]
-            idx = actions.reshape(actions.shape[0], -1)
-            kl = actor_lp.gather(-1, idx) - ref_lp.gather(-1, idx)
-            return base - self.kl_weight * kl.reshape_as(base)
+            return F.log_softmax(self.ref_model(contexts)[:, -1, :].float(), dim=-1)
 
-    def _compute_expected_reward(self, actor_probs, actor_lp, labels, contexts, device):
+    def _compute_rewards(self, actions, labels, actor_lp, ref_lp):
+        """Compute rewards with optional KL penalty. Handles [B] and [N, K] actions."""
+        base = (actions == (labels if actions.dim() == 1 else labels.unsqueeze(1))).float()
+        if ref_lp is None:
+            return base
+        # reshape to 2D for gather: [N, 1] or [N, K]
+        idx = actions.reshape(actions.shape[0], -1)
+        kl = actor_lp.gather(-1, idx) - ref_lp.gather(-1, idx)
+        return base - self.kl_weight * kl.reshape_as(base)
+
+    def _compute_expected_reward(self, actor_probs, actor_lp, labels, ref_lp):
         """Exact E[R|x] under the actor. Returns [N] tensor.
 
         For kl_weight=0: pi(label|x).
         For kl_weight>0: pi(label|x) - beta * KL(pi || ref).
         """
         p_label = actor_probs.gather(-1, labels.unsqueeze(-1)).squeeze(-1)
-        if self.kl_weight <= 0 or self.ref_model is None:
+        if ref_lp is None:
             return p_label
-        with torch.no_grad():
-            self.ref_model.to(device)
-            ref_lp = F.log_softmax(self.ref_model(contexts)[:, -1, :].float(), dim=-1)
-            kl = (actor_probs * (actor_lp - ref_lp)).sum(-1)
+        kl = (actor_probs * (actor_lp - ref_lp)).sum(-1)
         return p_label - self.kl_weight * kl
 
     def sample_batch(self, model: nn.Module, batch_size: int,
@@ -545,9 +547,10 @@ class LMBandit:
             baseline = (actor_probs ** 2).sum(-1)
         model.train()
 
-        rewards = self._compute_rewards(actions, labels, actor_lp, contexts, device)
+        ref_lp = self._ref_log_probs(contexts, device)
+        rewards = self._compute_rewards(actions, labels, actor_lp, ref_lp)
         expected_reward = self._compute_expected_reward(
-            actor_probs, actor_lp, labels, contexts, device)
+            actor_probs, actor_lp, labels, ref_lp)
         return Batch(obs=contexts, actions=actions, rewards=rewards,
                      labels=labels, actor_logp_a=logp_a, actor_baseline=baseline,
                      actor_expected_reward=expected_reward)
@@ -578,7 +581,8 @@ class LMBandit:
         fallback = raw_keep.sum() == 0
         if fallback:
             raw_keep[:] = True
-        rewards = self._compute_rewards(actions, labels, actor_lp, contexts, device)
+        ref_lp = self._ref_log_probs(contexts, device)
+        rewards = self._compute_rewards(actions, labels, actor_lp, ref_lp)
 
         K = group_size
         n_valid = raw_keep.sum().item()
@@ -592,7 +596,7 @@ class LMBandit:
         group_ids = torch.arange(n_valid, device=device).unsqueeze(1).expand(-1, K).reshape(-1)
 
         expected_reward = self._compute_expected_reward(
-            actor_probs, actor_lp, labels, contexts, device)
+            actor_probs, actor_lp, labels, ref_lp)
         expected_reward_f = expected_reward[raw_keep].unsqueeze(1).expand(-1, K).reshape(-1)
 
         return Batch(obs=contexts_f, actions=actions_f, rewards=rewards_f,

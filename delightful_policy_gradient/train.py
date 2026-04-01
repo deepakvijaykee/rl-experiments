@@ -101,6 +101,7 @@ def train_one_seed(task, loss_fn, model, config, seed, device) -> list[dict]:
 
     results = []
     consecutive_fallbacks = 0
+    last_completed_step = -1
     for step in range(config.num_steps):
         # Evaluate BEFORE training so step reflects the model's current state.
         # Skip warmup (step < delay). Step in CSV is the absolute update index,
@@ -156,6 +157,7 @@ def train_one_seed(task, loss_fn, model, config, seed, device) -> list[dict]:
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
+        last_completed_step = step
 
         if eval_due:
             row = {'step': step, 'loss': loss.item(), **metrics, **eval_metrics}
@@ -173,6 +175,12 @@ def train_one_seed(task, loss_fn, model, config, seed, device) -> list[dict]:
             if config.verbose and (step - config.delay) % (config.eval_every * 10) == 0:
                 print(f'  step {step:5d}  test_error={eval_metrics["test_error"]:.4f}'
                       f'  loss={loss.item():.4f}')
+
+    # Final evaluation of the fully trained model (post last update)
+    model.eval()
+    with torch.amp.autocast('cuda', dtype=torch.bfloat16, enabled=autocast):
+        final_metrics = task.evaluate(model, device)
+    results.append({'step': last_completed_step + 1, **final_metrics})
 
     return results
 
