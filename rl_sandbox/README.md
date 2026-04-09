@@ -1,10 +1,8 @@
-# Delightful Policy Gradient
+# rl_sandbox
 
-PyTorch implementation of [Delightful Policy Gradient](https://arxiv.org/abs/2603.14608) (Osband 2026) with field baselines for comparison.
+Policy gradient experiments exploring influence allocation: which samples and tokens deserve gradient budget, and by what rule?
 
-## Intuition
-
-Standard policy gradients weight each sample by advantage alone. A rare wrong action gets the same gradient weight as a rare right one. DG gates each term with *delight* = advantage x surprisal. Rare successes (breakthroughs) pass through; rare failures (blunders) are suppressed. One sigmoid, one multiply, drop-in replacement for REINFORCE.
+Centered on [Delightful Policy Gradient](https://arxiv.org/abs/2603.14608) (Osband 2026), with field baselines testing alternative mechanisms: asymmetric IS (ASPO), ratio-variance regularization (R2VPO), prefix-tree credit assignment (TEMPO), and others.
 
 ## Usage
 
