@@ -90,7 +90,7 @@ def train_one_seed(task, loss_fn, model, config, seed, device) -> list[dict]:
     task.compute_difficulty(model, device)
 
     # Determine group_size for grouped methods
-    group_size = config.group_size if config.method == 'MaxRL' else 1
+    group_size = config.group_size if config.method in ('MaxRL', 'TEMPO') else 1
     assert config.batch_size % group_size == 0, \
         f'batch_size ({config.batch_size}) must be divisible by group_size ({group_size})'
 
@@ -205,12 +205,15 @@ LOSSES = {
     'CE': lambda c: L.CELoss(),
     'REINFORCE': lambda c: L.REINFORCELoss(baseline=c.baseline),
     'PG': lambda c: L.PGLoss(baseline=c.baseline, iw_cap=c.iw_cap),
+    'ASPO': lambda c: L.ASPOLoss(baseline=c.baseline, iw_cap=c.iw_cap),
     'TrajPG': lambda c: L.TrajectoryPGLoss(baseline=c.baseline, iw_cap=c.iw_cap),
     'DG': lambda c: L.DGLoss(eta=c.eta, baseline=c.baseline),
     'Kondo': lambda c: L.KondoLoss(eta=c.eta, keep_ratio=c.kondo_keep, baseline=c.baseline),
     'LogGrowth': lambda c: L.LogGrowthLoss(baseline=c.baseline),
     'DGToken': lambda c: L.DGTokenCreditLoss(eta=c.eta),
+    'TEMPO': lambda c: L.TEMPOLoss(iw_cap=c.iw_cap),
     'MaxRL': lambda c: L.MaxRLLoss(iw_cap=c.iw_cap),
+    'R2VPO': lambda c: L.R2VPOLoss(baseline=c.baseline, lam=c.eta),
     'PMDMean': lambda c: L.PMDMeanLoss(tau=c.eta),
 }
 
@@ -288,7 +291,7 @@ def run_config(config: Config) -> pd.DataFrame:
 
 def run_sweep(config: Config) -> pd.DataFrame:
     dfs = []
-    for method in ['REINFORCE', 'PG', 'TrajPG', 'DG', 'Kondo']:
+    for method in ['REINFORCE', 'PG', 'ASPO', 'TrajPG', 'DG', 'Kondo']:
         for delay in [0, 1, 3, 10, 30, 100]:
             cfg = dataclasses.replace(config, method=method, delay=delay)
             dfs.append(run_config(cfg))

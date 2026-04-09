@@ -19,7 +19,7 @@ python -m delightful_policy_gradient.plot results.csv
 
 ## Methods
 
-CE, REINFORCE, PG, DG, Kondo, DGToken, LogGrowth, MaxRL, PMDMean
+CE, REINFORCE, PG, ASPO, DG, Kondo, DGToken, TEMPO, LogGrowth, MaxRL, R2VPO, PMDMean
 
 ## Tasks
 

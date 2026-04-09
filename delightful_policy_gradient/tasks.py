@@ -175,7 +175,9 @@ class MNISTBandit:
         model.eval()
         logits = model(self.test_images.to(device))
         acc = (logits.argmax(-1) == self.test_labels.to(device)).float().mean().item()
-        return {'test_error': 1.0 - acc}
+        lp = F.log_softmax(logits, dim=-1)
+        entropy = -(lp.exp() * lp).sum(dim=-1).mean().item()
+        return {'test_error': 1.0 - acc, 'entropy': entropy}
 
 
 # ── Token Reversal ───────────────────────────────────────────────────────────
@@ -327,6 +329,7 @@ class TokenReversal:
                  num_batches: int = 10, batch_size: int = 100) -> dict[str, float]:
         H, M = self.seq_len, self.vocab_size
         total_correct, total_tokens, total_exact, total_seqs = 0, 0, 0, 0
+        total_entropy, total_ent_tokens = 0.0, 0
         model.eval()
         for _ in range(num_batches):
             input_tokens = torch.randint(M, (batch_size, H), device=device)
@@ -334,16 +337,23 @@ class TokenReversal:
             sep = torch.full((batch_size, 1), self.sep_token, device=device, dtype=torch.long)
             prefix = torch.cat([input_tokens, sep], dim=1)
             for _ in range(H):
-                next_token = model(prefix)[:, -1].argmax(dim=-1)
+                step_logits = model(prefix)[:, -1]
+                lp = F.log_softmax(step_logits, dim=-1)
+                total_entropy += -(lp.exp() * lp).sum(dim=-1).sum().item()
+                total_ent_tokens += batch_size
+                next_token = step_logits.argmax(dim=-1)
                 prefix = torch.cat([prefix, next_token.unsqueeze(1)], dim=1)
             generated = prefix[:, H + 1:]
             total_correct += (generated == target_tokens).float().sum().item()
             total_tokens += batch_size * H
             total_exact += (generated == target_tokens).all(dim=1).float().sum().item()
             total_seqs += batch_size
+        result = {'entropy': total_entropy / total_ent_tokens}
         if self.binary_reward:
-            return {'test_error': 1.0 - total_exact / total_seqs}
-        return {'test_error': 1.0 - total_correct / total_tokens}
+            result['test_error'] = 1.0 - total_exact / total_seqs
+        else:
+            result['test_error'] = 1.0 - total_correct / total_tokens
+        return result
 
 
 # ── Masked Reversal ─────────────────────────────────────────────────────────
@@ -402,6 +412,7 @@ class MaskedReversal(TokenReversal):
         scored_correct, scored_total = 0, 0
         scored_exact, scored_seqs = 0, 0
         unscored_correct, unscored_total = 0, 0
+        total_entropy, total_ent_tokens = 0.0, 0
         model.eval()
         for _ in range(num_batches):
             input_tokens = torch.randint(M, (batch_size, H), device=device)
@@ -409,7 +420,11 @@ class MaskedReversal(TokenReversal):
             sep = torch.full((batch_size, 1), self.sep_token, device=device, dtype=torch.long)
             prefix = torch.cat([input_tokens, sep], dim=1)
             for _ in range(H):
-                next_token = model(prefix)[:, -1].argmax(dim=-1)
+                step_logits = model(prefix)[:, -1]
+                lp = F.log_softmax(step_logits, dim=-1)
+                total_entropy += -(lp.exp() * lp).sum(dim=-1).sum().item()
+                total_ent_tokens += batch_size
+                next_token = step_logits.argmax(dim=-1)
                 prefix = torch.cat([prefix, next_token.unsqueeze(1)], dim=1)
             generated = prefix[:, H + 1:]
             correct = (generated == target_tokens).float()
@@ -424,6 +439,7 @@ class MaskedReversal(TokenReversal):
             result = {'test_error': 1.0 - scored_exact / scored_seqs}
         else:
             result = {'test_error': 1.0 - scored_correct / scored_total}
+        result['entropy'] = total_entropy / total_ent_tokens
         if unscored_total > 0:
             result['test_error_unscored'] = 1.0 - unscored_correct / unscored_total
         return result
@@ -651,7 +667,7 @@ class LMBandit:
         C = self.context_len
         n_eval = min((len(self.test_tokens) - C - 1) // C, self.max_eval_contexts)
         starts = torch.arange(n_eval) * C
-        all_correct, all_log_prob = [], []
+        all_correct, all_log_prob, all_entropy = [], [], []
 
         model.eval()
         with torch.amp.autocast('cuda', dtype=torch.bfloat16):
@@ -663,6 +679,7 @@ class LMBandit:
                 all_correct.extend((logits.argmax(-1) == lab).tolist())
                 lp = F.log_softmax(logits.float(), dim=-1)
                 all_log_prob.extend(lp.gather(1, lab.unsqueeze(1)).squeeze(1).tolist())
+                all_entropy.extend(-(lp.exp() * lp).sum(dim=-1).tolist())
 
         n = len(all_correct)
         # Perplexity over non-overlapping windows (one token per window).
@@ -670,6 +687,7 @@ class LMBandit:
         result = {
             'test_error': 1.0 - sum(all_correct) / n,
             'perplexity': math.exp(-sum(all_log_prob) / n),
+            'entropy': sum(all_entropy) / n,
         }
 
         if self._test_difficulty is not None:

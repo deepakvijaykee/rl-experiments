@@ -6,11 +6,14 @@ From the literature:
   CE         — supervised cross-entropy oracle (upper bound)
   REINFORCE  — Williams 1992, no off-policy correction
   PG         — per-token importance-weighted policy gradient (approximate on sequences)
+  ASPO       — asymmetric IS: flips ratio for positive advantage (arXiv:2510.06062)
   TrajPG     — trajectory-level IW PG (exact off-policy on short sequences)
   DG         — Delightful Policy Gradient (Osband 2026)
   Kondo      — compute-efficient DG ("Does This Gradient Spark Joy?", Osband 2026)
   DGToken    — per-token return-to-go credit assignment (fractional reward only)
+  TEMPO      — prefix-tree credit via branch-gated TD (arXiv:2509.18314)
   MaxRL      — ML-optimal per-group mean normalization, binary only (Tajwar et al. 2026)
+  R2VPO      — ratio-variance regularized PG, replaces clipping (arXiv:2601.03320)
   PMDMean    — Policy Mirror Descent with mean-reward partition approx (Kimi k1.5 lineage, 2025)
 
 logits shape matches batch.actions:
@@ -128,6 +131,53 @@ class PGLoss:
         return loss, {
             'reward': batch.rewards.mean().item(),
             'iw_mean': iw.mean().item(),
+        }
+
+
+class ASPOLoss:
+    """Asymmetric importance-weighted PG — flips IS ratio for positive advantage.
+
+    ASPO (arXiv:2510.06062). Standard PG weights every token by pi_new/pi_old,
+    which suppresses rare good actions (low ratio) and amplifies common ones.
+    ASPO inverts the ratio for positive-advantage tokens: pi_old/pi_new gives
+    rare breakthroughs MORE gradient, not less. Negative-advantage tokens keep
+    the standard ratio so common bad actions are still pushed down hard.
+
+    Comparison to DG: both promote rare breakthroughs asymmetrically.
+      DG:   weight = sigmoid(advantage × surprisal)   (gates by delight)
+      ASPO: weight = pi_old/pi_new for A > 0           (gates by inverted ratio)
+
+    At delay=0 (on-policy), ratio=1 everywhere, so ASPO reduces to REINFORCE.
+    The asymmetry only manifests under staleness (delay > 0).
+    """
+    name = 'ASPO'
+
+    def __init__(self, baseline: str = 'expected', iw_cap: float = 10.0):
+        self.baseline = baseline
+        self.iw_cap = iw_cap
+
+    def __call__(self, logits, batch):
+        logp_a, advantage = _pg_core(logits, batch, self.baseline)
+
+        log_ratio = logp_a - batch.actor_logp_a           # log(pi_new / pi_old)
+        log_cap = math.log(self.iw_cap)
+
+        # Standard: pi_new/pi_old (amplifies high-prob tokens)
+        ratio = torch.exp(log_ratio.clamp(max=log_cap))
+        # Flipped: pi_old/pi_new (amplifies low-prob tokens)
+        flipped = torch.exp((-log_ratio).clamp(max=log_cap))
+
+        # Asymmetric selection: flipped for positive advantage, standard otherwise
+        pos = (advantage > 0).float()
+        weight = pos * flipped + (1.0 - pos) * ratio
+
+        loss = -(logp_a * (weight * advantage).detach()).mean()
+        return loss, {
+            'reward': batch.rewards.mean().item(),
+            'ratio_mean': ratio.mean().item(),
+            'flipped_mean': flipped.mean().item(),
+            'weight_mean': weight.mean().item(),
+            'pos_frac': pos.mean().item(),
         }
 
 
@@ -355,6 +405,109 @@ class DGTokenCreditLoss:
         }
 
 
+class TEMPOLoss:
+    """Prefix-tree credit assignment via branch-gated TD.
+
+    TEMPO (arXiv:2509.18314). Requires grouped rollouts (group_size > 1).
+    Builds an implicit prefix tree from responses sharing the same context,
+    computes nonparametric prefix values V(s_t) = mean reward of descendants,
+    and adds a TD correction at branching tokens where rollouts diverge.
+
+    Advantage = GRPO baseline + branch-gated TD:
+        A_{i,t} = (r_i - mean(r) + V(s_{t+1}) - V(s_t)) / std(r)
+
+    At non-branching tokens (all rollouts agree), TD = 0 and this
+    reduces to GRPO. At branching tokens, TD provides token-level
+    credit without a learned critic.
+
+    For bandits (no sequence dimension), reduces to GRPO.
+    """
+    name = 'TEMPO'
+
+    def __init__(self, iw_cap: float = 10.0):
+        self.iw_cap = iw_cap
+
+    @staticmethod
+    def _prefix_values(actions, rewards):
+        """Nonparametric prefix values from grouped rollouts.
+
+        Builds an implicit prefix tree by progressive token matching.
+        V(s_t) for sample i = mean reward of all samples in the group
+        that agree with sample i on output tokens 0..t-1.
+
+        actions: [K, H] token sequences for one group
+        rewards: [K] outcome rewards
+        Returns: [K, H+1] prefix values (s_0 through s_H)
+        """
+        K, H = actions.shape
+        vals = torch.zeros(K, H + 1, device=actions.device)
+        vals[:, 0] = rewards.mean()
+
+        # match[i,j] tracks whether samples i and j agree on all tokens so far
+        match = torch.ones(K, K, dtype=torch.bool, device=actions.device)
+        for t in range(H):
+            same_at_t = actions[:, t].unsqueeze(1) == actions[:, t].unsqueeze(0)
+            match = match & same_at_t
+            match_f = match.float()
+            counts = match_f.sum(dim=1).clamp(min=1)
+            vals[:, t + 1] = (match_f @ rewards) / counts
+
+        return vals
+
+    def __call__(self, logits, batch):
+        log_probs = F.log_softmax(logits, dim=-1)
+        logp_a = gather_log_probs(log_probs, batch.actions)
+
+        assert batch.group_ids is not None, \
+            'TEMPO requires grouped rollouts (group_size > 1)'
+
+        rewards = batch.rewards
+        actions = batch.actions
+        is_seq = actions.dim() > 1
+
+        # Compute per-token TEMPO advantage for each group
+        advantage = torch.zeros_like(logp_a)
+        td_nonzero = 0
+        td_total = 0
+
+        for gid in batch.group_ids.unique():
+            mask = batch.group_ids == gid
+            g_rewards = rewards[mask]
+            K = g_rewards.shape[0]
+            if K < 2:
+                continue
+
+            g_std = g_rewards.std()
+            if g_std < 1e-8:
+                continue  # all same reward — no learning signal
+            g_mean = g_rewards.mean()
+
+            if is_seq:
+                g_actions = actions[mask]  # [K, H]
+                pv = self._prefix_values(g_actions, g_rewards)  # [K, H+1]
+                td = pv[:, 1:] - pv[:, :-1]  # [K, H]
+
+                grpo_base = (g_rewards - g_mean).unsqueeze(1) / g_std  # [K, 1]
+                advantage[mask] = grpo_base + td / g_std
+
+                td_nonzero += (td.abs() > 1e-8).sum().item()
+                td_total += td.numel()
+            else:
+                # Bandit: no sequence, just GRPO normalization
+                advantage[mask] = (g_rewards - g_mean) / g_std
+
+        # IS correction
+        log_ratio = logp_a - batch.actor_logp_a
+        ratio = torch.exp(log_ratio.clamp(max=math.log(self.iw_cap)))
+
+        loss = -(logp_a * (ratio * advantage).detach()).mean()
+        return loss, {
+            'reward': rewards.mean().item(),
+            'ratio_mean': ratio.mean().item(),
+            'td_nonzero_frac': td_nonzero / max(td_total, 1),
+        }
+
+
 # ── Field baselines ──────────────────────────────────────────────────────────
 
 
@@ -404,6 +557,49 @@ class MaxRLLoss:
         return loss, {
             'reward': batch.rewards.mean().item(),
             'iw_mean': iw.mean().item(),
+        }
+
+
+class R2VPOLoss:
+    """Ratio-variance regularized PG — replaces hard clipping with soft penalty.
+
+    R2VPO (arXiv:2601.03320). Instead of capping/clipping the IS ratio,
+    penalizes its variance: L = ratio * A - lam * (ratio - 1)^2.
+    The penalty 2*lam*(ratio-1) acts as a dynamic regularizer that
+    smoothly scales the effective advantage based on ratio deviation.
+
+    Unlike hard clipping (which zeros gradient at the boundary), R2VPO
+    preserves gradient sign but scales magnitude — rare high-advantage,
+    high-divergence samples ("eureka moments") still contribute.
+
+    Comparison to DG/ASPO: those *amplify* rare breakthroughs.
+    R2VPO merely *preserves* them by not clipping. Tests whether
+    amplification is necessary or preservation is sufficient.
+
+    No ratio capping — the variance penalty self-corrects for large ratios.
+    """
+    name = 'R2VPO'
+
+    def __init__(self, baseline: str = 'expected', lam: float = 0.04):
+        self.baseline = baseline
+        self.lam = lam
+
+    def __call__(self, logits, batch):
+        logp_a, advantage = _pg_core(logits, batch, self.baseline)
+
+        log_ratio = logp_a - batch.actor_logp_a
+        ratio = torch.exp(log_ratio.clamp(min=-20, max=20))  # numerical guard only
+
+        # R2VPO: effective advantage = A - 2*lam*(ratio-1)
+        # The penalty pulls ratio toward 1, softly constraining the trust region.
+        variance_penalty = 2 * self.lam * (ratio - 1)
+        effective = ratio * (advantage - variance_penalty)
+
+        loss = -(logp_a * effective.detach()).mean()
+        return loss, {
+            'reward': batch.rewards.mean().item(),
+            'ratio_mean': ratio.mean().item(),
+            'var_penalty_mean': variance_penalty.mean().item(),
         }
 
 
