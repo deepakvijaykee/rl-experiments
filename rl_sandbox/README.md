@@ -11,10 +11,10 @@ Standard policy gradients weight each sample by advantage alone. A rare wrong ac
 ```bash
 pip install -r requirements.txt
 
-python -m delightful_policy_gradient.train --method DG --delay 30
-python -m delightful_policy_gradient.train --task lm_bandit --method DG --model_name distilgpt2 --batch_size 16 --lr 5e-5
-python -m delightful_policy_gradient.train --sweep
-python -m delightful_policy_gradient.plot results.csv
+python -m rl_sandbox.train --method DG --delay 30
+python -m rl_sandbox.train --task lm_bandit --method DG --model_name distilgpt2 --batch_size 16 --lr 5e-5
+python -m rl_sandbox.train --sweep
+python -m rl_sandbox.plot results.csv
 ```
 
 ## Methods

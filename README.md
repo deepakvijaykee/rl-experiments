@@ -30,4 +30,4 @@ The interesting directions are where influence allocation interacts with the oth
 
 ## Experiments
 
-- **[delightful_policy_gradient/](delightful_policy_gradient/)**: Implementation of [Delightful Policy Gradient](https://arxiv.org/abs/2603.14608) with field baselines (DAPO, PMDMean, etc.). Tests influence allocation in policy gradients across MNIST bandits, token reversal, and LM next-token prediction.
+- **[rl_sandbox/](rl_sandbox/)**: Policy gradient experiments centered on [Delightful Policy Gradient](https://arxiv.org/abs/2603.14608) with field baselines (ASPO, R2VPO, TEMPO, PMDMean, etc.). Tests influence allocation across MNIST bandits, token reversal, and LM next-token prediction.
