@@ -143,41 +143,47 @@ class ASPOLoss:
     rare breakthroughs MORE gradient, not less. Negative-advantage tokens keep
     the standard ratio so common bad actions are still pushed down hard.
 
-    Comparison to DG: both promote rare breakthroughs asymmetrically.
-      DG:   weight = sigmoid(advantage × surprisal)   (gates by delight)
-      ASPO: weight = pi_old/pi_new for A > 0           (gates by inverted ratio)
+    One-sided PPO-clip with asymmetric bounds (eps_low, eps_high):
+      A > 0: cap flipped ratio above at 1+eps_high (don't over-promote)
+      A < 0: cap standard ratio below at 1-eps_low  (don't over-suppress)
+    No cap in the other direction — if the policy moved away from a good
+    action, the small ratio flows through uncapped.
 
     At delay=0 (on-policy), ratio=1 everywhere, so ASPO reduces to REINFORCE.
-    The asymmetry only manifests under staleness (delay > 0).
     """
     name = 'ASPO'
 
-    def __init__(self, baseline: str = 'expected', iw_cap: float = 10.0):
+    def __init__(self, baseline: str = 'expected',
+                 eps_low: float = 0.2, eps_high: float = 0.28):
         self.baseline = baseline
-        self.iw_cap = iw_cap
+        self.eps_low = eps_low
+        self.eps_high = eps_high
 
     def __call__(self, logits, batch):
         logp_a, advantage = _pg_core(logits, batch, self.baseline)
 
         log_ratio = logp_a - batch.actor_logp_a           # log(pi_new / pi_old)
-        log_cap = math.log(self.iw_cap)
+        pos = advantage > 0
 
-        # Standard: pi_new/pi_old (amplifies high-prob tokens)
-        ratio = torch.exp(log_ratio.clamp(max=log_cap))
-        # Flipped: pi_old/pi_new (amplifies low-prob tokens)
-        flipped = torch.exp((-log_ratio).clamp(max=log_cap))
+        # Ratio flip: inverted for positive advantage, standard for negative
+        aspo_log_ratio = torch.where(pos, -log_ratio, log_ratio)
+        aspo_ratio = torch.exp(aspo_log_ratio.clamp(min=-20, max=20))
 
-        # Asymmetric selection: flipped for positive advantage, standard otherwise
-        pos = (advantage > 0).float()
-        weight = pos * flipped + (1.0 - pos) * ratio
+        # One-sided PPO-clip with asymmetric bounds.
+        # For A > 0: only cap above (prevent over-promotion beyond trust region)
+        # For A < 0: only cap below (prevent over-suppression beyond trust region)
+        weight = torch.where(
+            pos,
+            torch.clamp(aspo_ratio, max=1 + self.eps_high),
+            torch.clamp(aspo_ratio, min=1 - self.eps_low),
+        )
 
         loss = -(logp_a * (weight * advantage).detach()).mean()
         return loss, {
             'reward': batch.rewards.mean().item(),
-            'ratio_mean': ratio.mean().item(),
-            'flipped_mean': flipped.mean().item(),
+            'ratio_mean': aspo_ratio.mean().item(),
             'weight_mean': weight.mean().item(),
-            'pos_frac': pos.mean().item(),
+            'pos_frac': pos.float().mean().item(),
         }
 
 
@@ -245,10 +251,10 @@ class KondoLoss:
     """Compute-efficient DG — screens samples BEFORE the learner forward pass.
 
     "Does This Gradient Spark Joy?" (Osband 2026, arXiv:2603.20526).
-    The screen() method uses actor_log_probs (already in the batch, no learner
-    forward needed) to estimate delight and select the top keep_ratio fraction.
-    The training loop calls screen() → batch.select() → compute_logits on the
-    reduced batch, so only selected samples go through forward + backward.
+    Algorithm 1: compute delight from actor log-probs, set lambda to the
+    batch quantile targeting keep_ratio, then gate each sample stochastically
+    via Bernoulli(sigmoid((delight - lambda) / eta)). Only gated samples
+    go through the learner forward + backward pass.
     """
     name = 'Kondo'
 
@@ -257,14 +263,15 @@ class KondoLoss:
         self.eta = eta
         self.keep_ratio = keep_ratio
         self.baseline = baseline
-        self._kept_frac = 1.0  # tracked for metrics
+        self._kept_frac = 1.0
+        self._gate_prob_mean = 0.5
 
     def screen(self, batch) -> torch.Tensor:
-        """Pre-screen using actor log-probs. Returns boolean mask [B].
+        """Stochastic pre-screen using actor log-probs. Returns boolean mask [B].
 
         Called BEFORE compute_logits — this is where the compute saving happens.
         For sequential tasks (delight is [B, T]), aggregates to one score per
-        sequence via max |delight| over tokens. Mask is always [B].
+        sequence via max delight over tokens. Mask is always [B].
         """
         actor_logp_a = batch.actor_logp_a
         baseline = batch.actor_expected_reward if batch.actor_expected_reward is not None else batch.actor_baseline
@@ -277,16 +284,30 @@ class KondoLoss:
         delight = advantage * (-actor_logp_a)
 
         # Reduce to per-sequence score: max delight over token positions.
-        # Rank by raw delight (highest = breakthroughs), not abs.
         per_sample = delight
         while per_sample.dim() > 1:
             per_sample = per_sample.max(dim=-1).values
 
-        B = per_sample.shape[0]
-        k = max(1, int(B * self.keep_ratio))
-        threshold = per_sample.kthvalue(B - k + 1).values
-        mask = per_sample >= threshold
+        # Find lambda so that mean(sigmoid((chi - lambda) / eta)) = keep_ratio.
+        # Binary search: sigmoid is monotone in -lambda, so the mean is too.
+        lo = per_sample.min() - 10 * self.eta
+        hi = per_sample.max() + 10 * self.eta
+        for _ in range(20):
+            mid = (lo + hi) / 2
+            if torch.sigmoid((per_sample - mid) / self.eta).mean() > self.keep_ratio:
+                lo = mid
+            else:
+                hi = mid
+        threshold = (lo + hi) / 2
+
+        # Stochastic Bernoulli gate via sigmoid (paper Eq. for w*)
+        gate_prob = torch.sigmoid((per_sample - threshold) / self.eta)
+        mask = torch.bernoulli(gate_prob).bool()
+        if not mask.any():
+            mask[per_sample.argmax()] = True
+
         self._kept_frac = mask.float().mean().item()
+        self._gate_prob_mean = gate_prob.mean().item()
         return mask
 
     def __call__(self, logits, batch):
@@ -300,6 +321,7 @@ class KondoLoss:
             'reward': batch.rewards.mean().item(),
             'gate_mean': gate.mean().item(),
             'kept_frac': self._kept_frac,
+            'gate_prob_mean': self._gate_prob_mean,
         }
 
 

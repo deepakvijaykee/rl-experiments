@@ -205,7 +205,7 @@ LOSSES = {
     'CE': lambda c: L.CELoss(),
     'REINFORCE': lambda c: L.REINFORCELoss(baseline=c.baseline),
     'PG': lambda c: L.PGLoss(baseline=c.baseline, iw_cap=c.iw_cap),
-    'ASPO': lambda c: L.ASPOLoss(baseline=c.baseline, iw_cap=c.iw_cap),
+    'ASPO': lambda c: L.ASPOLoss(baseline=c.baseline, eps_low=c.clip_low, eps_high=c.clip_high),
     'TrajPG': lambda c: L.TrajectoryPGLoss(baseline=c.baseline, iw_cap=c.iw_cap),
     'DG': lambda c: L.DGLoss(eta=c.eta, baseline=c.baseline),
     'Kondo': lambda c: L.KondoLoss(eta=c.eta, keep_ratio=c.kondo_keep, baseline=c.baseline),
@@ -249,6 +249,9 @@ class Config:
     eta: float = 1.0
     # PG
     iw_cap: float = 10.0
+    # ASPO
+    clip_low: float = 0.2
+    clip_high: float = 0.28
     # Kondo
     kondo_keep: float = 0.5
     # MaxRL

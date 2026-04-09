@@ -679,7 +679,7 @@ class LMBandit:
                 all_correct.extend((logits.argmax(-1) == lab).tolist())
                 lp = F.log_softmax(logits.float(), dim=-1)
                 all_log_prob.extend(lp.gather(1, lab.unsqueeze(1)).squeeze(1).tolist())
-                all_entropy.extend(-(lp.exp() * lp).sum(dim=-1).tolist())
+                all_entropy.extend((-(lp.exp() * lp).sum(dim=-1)).tolist())
 
         n = len(all_correct)
         # Perplexity over non-overlapping windows (one token per window).
