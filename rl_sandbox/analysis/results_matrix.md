@@ -4,9 +4,7 @@ Compact GPU sweeps in this document use three seeds, `batch_size=96`, and the
 default token-reversal model unless noted. They are evidence checks for method
 regimes, not final benchmark claims.
 
-Reproduction commands live in `docs/sweep_manifest.md`. The CSV summaries can
-be regenerated with `python scripts/summarize_results.py --preset evidence`.
-Behavior sanity notes live in `docs/behavior_sanity.md`.
+Reproduction commands live in `rl_sandbox/analysis/sweep_manifest.md`.
 
 ## Token Reversal Influence Baselines
 

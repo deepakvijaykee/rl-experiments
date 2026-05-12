@@ -1,18 +1,15 @@
 # Evidence Sweep Manifest
 
 These commands reproduce the compact evidence sweeps summarized in
-`docs/results_matrix.md`. Run them from the repository root. The trainer picks
-CUDA automatically when PyTorch can see the GPU.
+`rl_sandbox/analysis/results_matrix.md`. Run them from the repository root. The
+trainer picks CUDA automatically when PyTorch can see the GPU.
 
 The sweeps are intentionally small: three seeds, `batch_size=96`, and short
 toy-task horizons unless noted. They are regime checks, not final benchmark
 claims.
 
-After running any subset, summarize the available CSVs with:
-
-```bash
-python scripts/summarize_results.py --preset evidence
-```
+Compare the generated CSVs against the compact tables in
+`rl_sandbox/analysis/results_matrix.md`.
 
 ## Token-Reversal Influence Baselines
 
