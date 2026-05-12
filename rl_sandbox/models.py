@@ -45,12 +45,12 @@ class CausalTransformer(nn.Module):
         self.ln_f = nn.LayerNorm(d_model)
         self.head = nn.Linear(d_model, vocab_size, bias=False)
 
-        # Causal mask — registered as buffer so it moves with .to(device)
+        # Registered as a buffer so the causal mask moves with .to(device).
         mask = torch.triu(torch.ones(max_seq_len, max_seq_len), diagonal=1).bool()
         self.register_buffer('causal_mask', mask)
 
     def forward(self, tokens: torch.Tensor) -> torch.Tensor:
-        B, T = tokens.shape
+        _, T = tokens.shape
         pos = torch.arange(T, device=tokens.device)
         h = self.tok_emb(tokens) * math.sqrt(self.d_model) + self.pos_emb(pos)
         h = self.transformer(h, mask=self.causal_mask[:T, :T])

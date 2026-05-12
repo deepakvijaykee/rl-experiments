@@ -30,4 +30,9 @@ The interesting directions are where influence allocation interacts with the oth
 
 ## Experiments
 
-- **[rl_sandbox/](rl_sandbox/)**: Policy gradient experiments centered on [Delightful Policy Gradient](https://arxiv.org/abs/2603.14608) with field baselines (ASPO, R2VPO, TEMPO, PMDMean, etc.). Tests influence allocation across MNIST bandits, token reversal, and LM next-token prediction.
+- **[rl_sandbox/](rl_sandbox/)**: Policy gradient experiments centered on [Delightful Policy Gradient](https://arxiv.org/abs/2603.14608) with field baselines (TPO, ASPO, R2VPO, TEMPO, PMDMean, etc.). Tests influence allocation across MNIST bandits, token reversal, reward-chain toys, and LM next-token prediction.
+
+## Implementation Discipline
+
+- **[CODING_GUIDELINES.md](CODING_GUIDELINES.md)**: local engineering protocol for keeping research code direct, scoped, and testable.
+- **[docs/implementation_fidelity.md](docs/implementation_fidelity.md)**: scope statement for paper-named methods and toy explorations.

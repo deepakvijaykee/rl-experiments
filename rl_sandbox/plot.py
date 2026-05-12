@@ -8,14 +8,24 @@ import plotnine as gg
 gg.theme_set(gg.theme_bw(base_size=14))
 
 
+def require_columns(df: pd.DataFrame, columns: set[str]):
+    missing = sorted(columns - set(df.columns))
+    if missing:
+        raise ValueError(f'Missing required columns: {missing}')
+
+
 def plot_delay_sweep(df: pd.DataFrame, output: str | None = None):
     """Test error vs step, faceted by delay, colored by method."""
+    require_columns(df, {'method', 'step', 'delay', 'test_error'})
     mean_df = (df.groupby(['method', 'step', 'delay'])['test_error']
                .agg(['mean', 'sem']).reset_index())
+    mean_df['sem'] = mean_df['sem'].fillna(0.0)
+    mean_df['ymin'] = mean_df['mean'] - mean_df['sem']
+    mean_df['ymax'] = mean_df['mean'] + mean_df['sem']
 
     p = (gg.ggplot(mean_df)
          + gg.aes(x='step', y='mean', colour='method', fill='method')
-         + gg.geom_ribbon(gg.aes(ymin='mean-sem', ymax='mean+sem'), alpha=0.2, size=0)
+         + gg.geom_ribbon(gg.aes(ymin='ymin', ymax='ymax'), alpha=0.2, size=0)
          + gg.geom_line()
          + gg.facet_wrap('delay', labeller='label_both', nrow=1)
          + gg.theme(figure_size=(16, 4))
@@ -31,19 +41,22 @@ def plot_delay_sweep(df: pd.DataFrame, output: str | None = None):
 
 def plot_final_vs_delay(df: pd.DataFrame, output: str | None = None):
     """Final test error vs delay for each method."""
+    require_columns(df, {'method', 'step', 'delay', 'seed', 'test_error'})
     # Use last recorded step per (method, delay, seed) since different
     # delays may have different step ranges (warmup consumes early steps)
     final_df = df.loc[df.groupby(['method', 'delay', 'seed']).step.idxmax()]
     mean_df = (final_df.groupby(['method', 'delay'])['test_error']
                .agg(['mean', 'sem']).reset_index())
+    mean_df['sem'] = mean_df['sem'].fillna(0.0)
+    mean_df['ymin'] = mean_df['mean'] - mean_df['sem']
+    mean_df['ymax'] = mean_df['mean'] + mean_df['sem']
 
     p = (gg.ggplot(mean_df)
          + gg.aes(x='delay', y='mean', colour='method')
-         + gg.geom_errorbar(gg.aes(ymin='mean-sem', ymax='mean+sem'), alpha=0.5)
+         + gg.geom_errorbar(gg.aes(ymin='ymin', ymax='ymax'), alpha=0.5)
          + gg.geom_line()
          + gg.geom_point()
          + gg.theme(figure_size=(6, 4))
-         + gg.scale_x_log10()
          + gg.scale_y_log10()
          + gg.ylab('test error at final step'))
 
