@@ -37,6 +37,7 @@ from sparse rewards.
 - **Core sandbox**: [rl_sandbox/](rl_sandbox/)
 - **Reproducible evidence commands**: [rl_sandbox/analysis/sweep_manifest.md](rl_sandbox/analysis/sweep_manifest.md)
 - **Compact results matrix**: [rl_sandbox/analysis/results_matrix.md](rl_sandbox/analysis/results_matrix.md)
+- **Implementation scope**: [rl_sandbox/analysis/implementation_scope.md](rl_sandbox/analysis/implementation_scope.md)
 
 ## Current Findings
 
@@ -50,6 +51,20 @@ These are compact three-seed GPU checks, not final benchmark claims.
 | Partial token credit | `TPOToken` drives masked-reversal scored suffix error to `0.0000 +/- 0.0000` while unscored positions remain near chance, showing targeted credit rather than dense sequence learning. |
 | Dense correction | `SelfDistillDG` and `SCOPELite` solve `chain_reversal` faster than CE at the 1500-step horizon; the 300-step exact-match result was under-budget. |
 | Entropy collapse | `GRPO` collapses entropy earliest in the compact entropy sweep. `TPO` keeps entropy near DG while reaching the best error, so its win is not just faster entropy collapse. |
+
+## Evidence Plots
+
+| Influence | Reward noise |
+| --- | --- |
+| ![Clean token-reversal final error](rl_sandbox/analysis/figures/influence.png) | ![False-positive reward-noise final error](rl_sandbox/analysis/figures/reward_noise.png) |
+
+| Replay | Partial credit |
+| --- | --- |
+| ![Replay freshness under delay](rl_sandbox/analysis/figures/replay.png) | ![Masked-reversal scored and unscored errors](rl_sandbox/analysis/figures/partial_credit.png) |
+
+| Dense correction | Entropy |
+| --- | --- |
+| ![Reward-chain dense correction first zero-error step](rl_sandbox/analysis/figures/dense_correction.png) | ![Final entropy by method](rl_sandbox/analysis/figures/entropy.png) |
 
 ## Method Taxonomy
 
@@ -126,6 +141,17 @@ python -m rl_sandbox.train --task token_reversal --method DGEntropyGuard \
 
 For the full compact evidence suite, use
 [rl_sandbox/analysis/sweep_manifest.md](rl_sandbox/analysis/sweep_manifest.md).
+Equivalent Make targets are available:
+
+```bash
+make sweep-influence
+make sweep-staleness
+make sweep-uncertainty
+make sweep-token-credit
+make sweep-self-distill
+make sweep-entropy
+make figures
+```
 
 ## Tasks
 
@@ -140,8 +166,6 @@ For the full compact evidence suite, use
 ## Verification
 
 ```bash
-python -m compileall -q rl_sandbox
-python -m rl_sandbox.train --task token_reversal --method DG \
-  --batch_size 16 --num_steps 2 --eval_every 1 --num_seeds 1 \
-  --output /tmp/rl_sandbox_smoke.csv --verbose false
+make smoke
+make test
 ```

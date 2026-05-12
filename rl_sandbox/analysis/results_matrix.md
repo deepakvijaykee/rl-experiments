@@ -5,6 +5,7 @@ default token-reversal model unless noted. They are evidence checks for method
 regimes, not final benchmark claims.
 
 Reproduction commands live in `rl_sandbox/analysis/sweep_manifest.md`.
+README figures can be regenerated with `make figures`.
 
 ## Token Reversal Influence Baselines
 

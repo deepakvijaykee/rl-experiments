@@ -11,6 +11,18 @@ claims.
 Compare the generated CSVs against the compact tables in
 `rl_sandbox/analysis/results_matrix.md`.
 
+The most common slices are also available as Make targets:
+
+```bash
+make sweep-influence
+make sweep-staleness
+make sweep-uncertainty
+make sweep-token-credit
+make sweep-self-distill
+make sweep-entropy
+make figures
+```
+
 ## Token-Reversal Influence Baselines
 
 ```bash
