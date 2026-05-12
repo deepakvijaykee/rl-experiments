@@ -26,19 +26,19 @@ python -m rl_sandbox.plot results.csv
 
 ## Methods
 
-Core baselines:
-
-CE, REINFORCE, PG, TrajPG, ASPO, GRPO, DrGRPO, DAPOLite, TPO,
-TPONoAnchor, GroupPG, TPOFullAction, TPOToken, GRPOToken, DG, Kondo,
-DGToken, TEMPO, LogGrowth, MaxRL, R2VPO, PMDMean
-
-Research-axis explorations:
-
-ReplayDG, FreshDG, DGEntropyGuard, UncertaintyDG, FilteredDG,
-RewardVarianceDG, SelfDistillDG, SCOPELite
-
-See [../docs/implementation_fidelity.md](../docs/implementation_fidelity.md)
-for the exact scope of each paper-named method.
+| Methods | Category | Scope |
+| --- | --- | --- |
+| CE, REINFORCE, PG, TrajPG | reference PG baselines | Direct sandbox implementations; sequence PG uses the logged-token approximation unless `TrajPG` is selected. |
+| ASPO, R2VPO, PMDMean, LogGrowth | objective geometry baselines | Scoped toy implementations of the core update rule; unsupported reward regimes are rejected. |
+| GRPO, DrGRPO, DAPOLite | RLVR baselines | Scoped implementations of group-relative rewards, clipping, normalization, and DAPO-lite design choices. Large-scale rollout infrastructure is out of scope. |
+| TPO, TPONoAnchor, GroupPG | sampled-candidate TPO baselines | Faithful local versions over grouped sampled rollouts. |
+| TPOFullAction | full-action TPO baseline | Scoped to clean, on-policy MNIST bandit runs with one optimizer epoch. |
+| TPOToken, GRPOToken | token-candidate TPO/GRPO baselines | Per-prefix candidate-simplex implementations for dense token-reward reversal tasks. |
+| DG, Kondo, DGToken | paper-centered influence methods | Direct sandbox implementations of delight gating, compute-aware screening, and token return-to-go credit. |
+| TEMPO, MaxRL | credit/normalization baselines | Toy prefix-tree credit and binary grouped mean-reward normalization; invalid reward regimes are rejected. |
+| ReplayDG, FreshDG | freshness explorations | DG composed with replay and explicit age weighting. |
+| DGEntropyGuard, UncertaintyDG, FilteredDG, RewardVarianceDG | robustness explorations | Local diagnostics/heuristics for entropy collapse and reward-noise conservatism, not full paper systems. |
+| SelfDistillDG, SCOPELite | dense-credit explorations | Oracle-label toy bridges from sparse reward to dense correction; not learned reviser or PRM implementations. |
 
 ## Tasks
 
