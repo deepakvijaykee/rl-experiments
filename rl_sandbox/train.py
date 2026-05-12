@@ -582,6 +582,9 @@ def _validate_basic_config(config: Config):
         raise ValueError('group_size must be >= 1')
     if config.replay_capacity < 0:
         raise ValueError('replay_capacity must be >= 0')
+    if config.replay_capacity > 0 and config.delay > 0:
+        if config.replay_capacity <= config.delay:
+            raise ValueError('replay_capacity must be > delay to expose stale replay')
     if config.replay_age_decay < 0:
         raise ValueError('replay_age_decay must be >= 0')
     if config.replay_priority not in REPLAY_PRIORITIES:
