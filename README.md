@@ -58,10 +58,6 @@ Figures show mean +/- standard error across the compact three-seed sweeps. They
 plot trajectories rather than only final bars so collapse, stalls, and recovery
 are visible.
 
-| Utility frontiers | Entropy buckets |
-| --- | --- |
-| ![Research utility frontiers across entropy, replay, credit, and dense correction](rl_sandbox/analysis/figures/utility_tradeoffs.png) | ![Entropy drop by surprisal and delight bucket](rl_sandbox/analysis/figures/entropy_buckets.png) |
-
 | Influence | Reward noise |
 | --- | --- |
 | ![Clean token-reversal learning curves](rl_sandbox/analysis/figures/influence.png) | ![False-positive reward-noise learning curves](rl_sandbox/analysis/figures/reward_noise.png) |
