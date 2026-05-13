@@ -5,9 +5,12 @@ default token-reversal model unless noted. They are evidence checks for method
 regimes, not final benchmark claims.
 
 Reproduction commands live in `rl_sandbox/analysis/sweep_manifest.md`.
-README figures can be regenerated with `make figures`.
+Figures in this document and the top-level README can be regenerated with
+`python rl_sandbox/analysis/plot_evidence.py`.
 
 ## Token Reversal Influence Baselines
+
+![Clean token-reversal learning curves](figures/influence.png)
 
 Command pattern:
 
@@ -26,6 +29,8 @@ In this compact run, sampled-candidate `TPO` is the strongest token-reversal
 baseline.
 
 ## Reward-Noise Robustness
+
+![False-positive reward-noise learning curves](figures/reward_noise.png)
 
 Command pattern:
 
@@ -54,6 +59,8 @@ every recent batch and stalls learning.
 
 ## Reward-Chain Dense Correction
 
+![Reward-chain dense-correction trajectories](figures/dense_correction.png)
+
 Command pattern:
 
 ```bash
@@ -74,6 +81,8 @@ This validates the dense-correction path: the earlier weak `SCOPELite` result
 was an under-budget exact-match artifact, not a loss failure.
 
 ## Freshness-Aware Replay
+
+![Replay freshness trajectories](figures/replay.png)
 
 Command pattern:
 
@@ -98,6 +107,8 @@ older than the nominal delay, causing entropy collapse unless freshness decay
 is strong enough to suppress very old updates.
 
 ## Masked-Reversal Partial Credit
+
+![Masked-reversal scored and unscored trajectories](figures/partial_credit.png)
 
 Command pattern:
 
@@ -126,6 +137,8 @@ accuracy because its return-to-go credit is concentrated on scored positions.
 rollouts no longer provide enough mixed-reward batches.
 
 ## Entropy-Collapse Diagnostics
+
+![Entropy and accuracy trajectories](figures/entropy.png)
 
 Command pattern:
 

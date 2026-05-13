@@ -54,17 +54,21 @@ These are compact three-seed GPU checks, not final benchmark claims.
 
 ## Evidence Plots
 
+Figures show mean +/- standard error across the compact three-seed sweeps. They
+plot trajectories rather than only final bars so collapse, stalls, and recovery
+are visible.
+
 | Influence | Reward noise |
 | --- | --- |
-| ![Clean token-reversal final error](rl_sandbox/analysis/figures/influence.png) | ![False-positive reward-noise final error](rl_sandbox/analysis/figures/reward_noise.png) |
+| ![Clean token-reversal learning curves](rl_sandbox/analysis/figures/influence.png) | ![False-positive reward-noise learning curves](rl_sandbox/analysis/figures/reward_noise.png) |
 
 | Replay | Partial credit |
 | --- | --- |
-| ![Replay freshness under delay](rl_sandbox/analysis/figures/replay.png) | ![Masked-reversal scored and unscored errors](rl_sandbox/analysis/figures/partial_credit.png) |
+| ![Replay freshness trajectories under delay](rl_sandbox/analysis/figures/replay.png) | ![Masked-reversal scored and unscored trajectories](rl_sandbox/analysis/figures/partial_credit.png) |
 
 | Dense correction | Entropy |
 | --- | --- |
-| ![Reward-chain dense correction first zero-error step](rl_sandbox/analysis/figures/dense_correction.png) | ![Final entropy by method](rl_sandbox/analysis/figures/entropy.png) |
+| ![Reward-chain dense correction trajectories](rl_sandbox/analysis/figures/dense_correction.png) | ![Entropy and accuracy trajectories](rl_sandbox/analysis/figures/entropy.png) |
 
 ## Method Taxonomy
 
@@ -141,16 +145,9 @@ python -m rl_sandbox.train --task token_reversal --method DGEntropyGuard \
 
 For the full compact evidence suite, use
 [rl_sandbox/analysis/sweep_manifest.md](rl_sandbox/analysis/sweep_manifest.md).
-Equivalent Make targets are available:
 
 ```bash
-make sweep-influence
-make sweep-staleness
-make sweep-uncertainty
-make sweep-token-credit
-make sweep-self-distill
-make sweep-entropy
-make figures
+python rl_sandbox/analysis/plot_evidence.py
 ```
 
 ## Tasks
@@ -166,6 +163,8 @@ make figures
 ## Verification
 
 ```bash
-make smoke
-make test
+python -m compileall -q rl_sandbox
+python -m rl_sandbox.train --task token_reversal --method DG \
+  --batch_size 16 --num_steps 2 --eval_every 1 --num_seeds 1 \
+  --output /tmp/rl_sandbox_smoke.csv --verbose false
 ```

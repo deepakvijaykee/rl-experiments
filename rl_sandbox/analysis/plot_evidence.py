@@ -1,4 +1,4 @@
-"""Generate compact evidence plots for the top-level README."""
+"""Generate compact learning-curve evidence plots for the README."""
 
 from __future__ import annotations
 
@@ -14,140 +14,213 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / 'rl_sandbox' / 'analysis' / 'figures'
 
+COLORS = {
+    'DG': '#4C78A8',
+    'DG delay4': '#4C78A8',
+    'DGEntropyGuard': '#72B7B2',
+    'GRPO': '#F58518',
+    'TPO': '#54A24B',
+    'CE': '#6B6ECF',
+    'ASPO': '#E45756',
+    'R2VPO': '#B279A2',
+    'UncertaintyDG': '#9D755D',
+    'RewardVarianceDG': '#FF9DA6',
+    'ReplayDG cap32': '#F58518',
+    'FreshDG cap5': '#54A24B',
+    'FreshDG cap32': '#B279A2',
+    'FreshDG decay0.5': '#E45756',
+    'DGToken': '#72B7B2',
+    'TPOToken': '#54A24B',
+    'GRPOToken': '#F58518',
+    'SelfDistillDG': '#54A24B',
+    'SCOPELite': '#E45756',
+}
 
-def final_by_seed(path: str, label: str) -> pd.DataFrame:
-    df = pd.read_csv(ROOT / path)
-    final = df.loc[df.groupby('seed').step.idxmax()].copy()
-    final['label'] = label
-    return final
+
+def read_run(path: str, label: str) -> pd.DataFrame:
+    csv_path = ROOT / path
+    if not csv_path.exists():
+        raise FileNotFoundError(f'{csv_path} is missing; run the sweep first')
+    df = pd.read_csv(csv_path)
+    df['label'] = label
+    return df
 
 
-def mean_sem(df: pd.DataFrame, value: str) -> pd.DataFrame:
-    return (df.groupby('label', sort=False)[value]
-            .agg(['mean', 'sem']).fillna(0.0).reset_index())
+def combine(runs: list[tuple[str, str]]) -> pd.DataFrame:
+    return pd.concat([read_run(path, label) for path, label in runs],
+                     ignore_index=True)
 
 
-def bar(ax, summary: pd.DataFrame, value_label: str, color: str):
-    ax.bar(summary['label'], summary['mean'], yerr=summary['sem'],
-           color=color, alpha=0.86, capsize=3)
-    ax.set_ylabel(value_label)
-    ax.tick_params(axis='x', rotation=25)
+def step_summary(df: pd.DataFrame, value: str) -> pd.DataFrame:
+    data = df.dropna(subset=[value]).copy()
+    summary = (data.groupby(['label', 'step'], sort=False)[value]
+               .agg(['mean', 'sem']).fillna(0.0).reset_index())
+    return summary
+
+
+def style_axis(ax, ylabel: str, title: str | None = None):
+    ax.set_xlabel('step')
+    ax.set_ylabel(ylabel)
+    if title:
+        ax.set_title(title)
+    ax.grid(axis='y', alpha=0.18)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
 
 
-def save(fig, name: str):
+def draw_curves(
+    ax,
+    df: pd.DataFrame,
+    value: str,
+    ylabel: str,
+    title: str | None = None,
+    labels: list[str] | None = None,
+):
+    labels = labels or list(dict.fromkeys(df['label']))
+    summary = step_summary(df, value)
+
+    for label in labels:
+        rows = summary[summary['label'] == label]
+        if rows.empty:
+            continue
+        color = COLORS.get(label)
+        x = rows['step'].to_numpy()
+        y = rows['mean'].to_numpy()
+        err = rows['sem'].to_numpy()
+        ax.plot(x, y, label=label, linewidth=2.2, color=color)
+        ax.fill_between(x, y - err, y + err, alpha=0.16, color=color)
+
+    style_axis(ax, ylabel, title)
+
+
+def add_figure_legend(fig, ax, ncol: int):
+    handles, labels = ax.get_legend_handles_labels()
+    fig.legend(handles, labels, frameon=False, ncol=ncol,
+               loc='lower center', bbox_to_anchor=(0.5, 0.01))
+
+
+def save(fig, name: str, bottom: float = 0.0):
     OUT.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout()
-    fig.savefig(OUT / name, dpi=160)
+    if bottom:
+        fig.tight_layout(rect=(0, bottom, 1, 1))
+    else:
+        fig.tight_layout()
+    fig.savefig(OUT / name, dpi=170)
     plt.close(fig)
 
 
 def plot_influence():
-    data = pd.concat([
-        final_by_seed('results/dg_token.csv', 'DG'),
-        final_by_seed('results/grpo_token.csv', 'GRPO'),
-        final_by_seed('results/tpo_token.csv', 'TPO'),
+    data = combine([
+        ('results/dg_token.csv', 'DG'),
+        ('results/grpo_token.csv', 'GRPO'),
+        ('results/tpo_token.csv', 'TPO'),
     ])
-    fig, ax = plt.subplots(figsize=(5.2, 3.2))
-    bar(ax, mean_sem(data, 'test_error'), 'final test error', '#4C78A8')
-    ax.set_title('Clean Token Reversal')
+    fig, ax = plt.subplots(figsize=(6.6, 3.8))
+    draw_curves(ax, data, 'test_error', 'test error',
+                'Clean Token Reversal')
+    ax.set_ylim(0.15, 0.75)
+    ax.legend(frameon=False, ncol=3, loc='upper right')
     save(fig, 'influence.png')
 
 
 def plot_noise():
-    data = pd.concat([
-        final_by_seed('results/noise_dg_false_positive_rare.csv', 'DG'),
-        final_by_seed('results/noise_uncertaintydg_false_positive_rare.csv',
-                      'UncertaintyDG'),
-        final_by_seed('results/noise_rewardvariancedg_false_positive_rare.csv',
-                      'RewardVarianceDG'),
-        final_by_seed('results/noise_aspo_false_positive_rare.csv', 'ASPO'),
-        final_by_seed('results/noise_r2vpo_false_positive_rare.csv', 'R2VPO'),
+    data = combine([
+        ('results/noise_dg_false_positive_rare.csv', 'DG'),
+        ('results/noise_uncertaintydg_false_positive_rare.csv',
+         'UncertaintyDG'),
+        ('results/noise_rewardvariancedg_false_positive_rare.csv',
+         'RewardVarianceDG'),
+        ('results/noise_aspo_false_positive_rare.csv', 'ASPO'),
+        ('results/noise_r2vpo_false_positive_rare.csv', 'R2VPO'),
     ])
-    fig, ax = plt.subplots(figsize=(6.2, 3.2))
-    bar(ax, mean_sem(data, 'test_error'), 'final test error', '#F58518')
-    ax.set_title('False-Positive Rare-Token Noise')
-    save(fig, 'reward_noise.png')
+    labels = ['DG', 'UncertaintyDG', 'RewardVarianceDG', 'ASPO', 'R2VPO']
+    fig, axes = plt.subplots(1, 2, figsize=(9.4, 3.7), sharex=True)
+    draw_curves(axes[0], data, 'test_error', 'test error',
+                'False-Positive Reward Noise', labels)
+    draw_curves(axes[1], data, 'entropy', 'entropy',
+                'Collapse Pressure', labels)
+    axes[0].set_ylim(0.3, 0.75)
+    add_figure_legend(fig, axes[0], ncol=5)
+    save(fig, 'reward_noise.png', bottom=0.16)
 
 
 def plot_replay():
-    data = pd.concat([
-        final_by_seed('results/replay_dg_delay4.csv', 'DG delay4'),
-        final_by_seed('results/replay_freshdg_cap5_delay4.csv', 'FreshDG cap5'),
-        final_by_seed('results/replay_freshdg_delay4.csv', 'FreshDG cap32'),
-        final_by_seed('results/replay_freshdg_decay05_delay4.csv',
-                      'FreshDG cap32 decay0.5'),
+    data = combine([
+        ('results/replay_dg_delay4.csv', 'DG delay4'),
+        ('results/replay_freshdg_cap5_delay4.csv', 'FreshDG cap5'),
+        ('results/replay_replaydg_delay4.csv', 'ReplayDG cap32'),
+        ('results/replay_freshdg_delay4.csv', 'FreshDG cap32'),
+        ('results/replay_freshdg_decay05_delay4.csv', 'FreshDG decay0.5'),
     ])
-    fig, ax = plt.subplots(figsize=(6.1, 3.2))
-    bar(ax, mean_sem(data, 'test_error'), 'final test error', '#54A24B')
-    ax.set_title('Replay Freshness Under Delay')
-    save(fig, 'replay.png')
+    labels = ['DG delay4', 'FreshDG cap5', 'ReplayDG cap32',
+              'FreshDG cap32', 'FreshDG decay0.5']
+    fig, axes = plt.subplots(1, 2, figsize=(9.6, 3.7), sharex=True)
+    draw_curves(axes[0], data, 'test_error', 'test error',
+                'Replay Under Policy Drift', labels)
+    draw_curves(axes[1], data, 'replay_age', 'sample age',
+                'Replay Age Actually Used', labels)
+    axes[0].set_ylim(0.45, 1.03)
+    add_figure_legend(fig, axes[0], ncol=5)
+    save(fig, 'replay.png', bottom=0.16)
 
 
 def plot_partial_credit():
-    runs = [
-        final_by_seed('results/masked_axis_ce.csv', 'CE'),
-        final_by_seed('results/masked_axis_dg.csv', 'DG'),
-        final_by_seed('results/masked_axis_dgtoken.csv', 'DGToken'),
-        final_by_seed('results/masked_axis_tpotoken.csv', 'TPOToken'),
-        final_by_seed('results/masked_axis_grpotoken.csv', 'GRPOToken'),
-    ]
-    data = pd.concat(runs)
-    scored = mean_sem(data, 'test_error')
-    unscored = mean_sem(data, 'test_error_unscored')
-
-    x = range(len(scored))
-    width = 0.38
-    fig, ax = plt.subplots(figsize=(6.4, 3.2))
-    ax.bar([i - width / 2 for i in x], scored['mean'], width,
-           yerr=scored['sem'], label='scored', color='#B279A2', capsize=3)
-    ax.bar([i + width / 2 for i in x], unscored['mean'], width,
-           yerr=unscored['sem'], label='unscored', color='#9D755D', capsize=3)
-    ax.set_xticks(list(x), scored['label'], rotation=25)
-    ax.set_ylabel('final test error')
-    ax.set_title('Masked Reversal Credit')
-    ax.legend(frameon=False)
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    save(fig, 'partial_credit.png')
+    data = combine([
+        ('results/masked_axis_ce.csv', 'CE'),
+        ('results/masked_axis_dg.csv', 'DG'),
+        ('results/masked_axis_dgtoken.csv', 'DGToken'),
+        ('results/masked_axis_tpotoken.csv', 'TPOToken'),
+        ('results/masked_axis_grpotoken.csv', 'GRPOToken'),
+    ])
+    labels = ['CE', 'DG', 'DGToken', 'TPOToken', 'GRPOToken']
+    fig, axes = plt.subplots(1, 2, figsize=(9.6, 3.7), sharex=True)
+    draw_curves(axes[0], data, 'test_error', 'scored error',
+                'Masked Reversal Scored Tokens', labels)
+    draw_curves(axes[1], data, 'test_error_unscored', 'unscored error',
+                'Unscored Positions', labels)
+    axes[0].set_ylim(-0.02, 0.75)
+    axes[1].set_ylim(0.2, 0.75)
+    add_figure_legend(fig, axes[0], ncol=5)
+    save(fig, 'partial_credit.png', bottom=0.16)
 
 
 def plot_dense_correction():
-    runs = [
-        final_by_seed('results/chain_ce_1500.csv', 'CE'),
-        final_by_seed('results/chain_selfdistilldg_1500.csv', 'SelfDistillDG'),
-        final_by_seed('results/chain_scopelite_1500.csv', 'SCOPELite'),
-    ]
-    data = []
-    for run in runs:
-        for seed, rows in run.groupby('seed'):
-            hit = rows.loc[rows['test_error'] <= 0.0, 'step']
-            data.append({
-                'label': rows['label'].iloc[0],
-                'seed': seed,
-                'first_zero_step': hit.iloc[0] if len(hit) else None,
-            })
-    summary = mean_sem(pd.DataFrame(data), 'first_zero_step')
-    fig, ax = plt.subplots(figsize=(5.3, 3.2))
-    bar(ax, summary, 'first zero-error step', '#E45756')
-    ax.set_title('Reward-Chain Dense Correction')
-    save(fig, 'dense_correction.png')
+    data = combine([
+        ('results/chain_ce_1500.csv', 'CE'),
+        ('results/chain_selfdistilldg_1500.csv', 'SelfDistillDG'),
+        ('results/chain_scopelite_1500.csv', 'SCOPELite'),
+    ])
+    labels = ['CE', 'SelfDistillDG', 'SCOPELite']
+    fig, axes = plt.subplots(1, 2, figsize=(9.4, 3.7), sharex=True)
+    draw_curves(axes[0], data, 'test_error', 'exact-match error',
+                'Reward-Chain Reversal', labels)
+    draw_curves(axes[1], data, 'chain_reward', 'chain reward',
+                'Checkpoint Credit', labels)
+    axes[0].set_ylim(-0.02, 1.05)
+    axes[1].set_ylim(-0.02, 1.05)
+    add_figure_legend(fig, axes[0], ncol=3)
+    save(fig, 'dense_correction.png', bottom=0.16)
 
 
 def plot_entropy():
-    data = pd.concat([
-        final_by_seed('results/entropy_dg.csv', 'DG'),
-        final_by_seed('results/entropy_dgentropyguard.csv', 'DGEntropyGuard'),
-        final_by_seed('results/entropy_aspo.csv', 'ASPO'),
-        final_by_seed('results/entropy_r2vpo.csv', 'R2VPO'),
-        final_by_seed('results/entropy_grpo.csv', 'GRPO'),
-        final_by_seed('results/entropy_tpo.csv', 'TPO'),
+    data = combine([
+        ('results/entropy_dg.csv', 'DG'),
+        ('results/entropy_dgentropyguard.csv', 'DGEntropyGuard'),
+        ('results/entropy_aspo.csv', 'ASPO'),
+        ('results/entropy_r2vpo.csv', 'R2VPO'),
+        ('results/entropy_grpo.csv', 'GRPO'),
+        ('results/entropy_tpo.csv', 'TPO'),
     ])
-    fig, ax = plt.subplots(figsize=(6.3, 3.2))
-    bar(ax, mean_sem(data, 'entropy'), 'final entropy', '#72B7B2')
-    ax.set_title('Entropy After Compact Training')
-    save(fig, 'entropy.png')
+    labels = ['DG', 'DGEntropyGuard', 'ASPO', 'R2VPO', 'GRPO', 'TPO']
+    fig, axes = plt.subplots(1, 2, figsize=(9.6, 3.7), sharex=True)
+    draw_curves(axes[0], data, 'test_error', 'test error',
+                'Accuracy vs Entropy Collapse', labels)
+    draw_curves(axes[1], data, 'entropy', 'entropy',
+                'Policy Entropy', labels)
+    axes[0].set_ylim(0.15, 0.75)
+    axes[1].set_ylim(-0.02, 1.15)
+    add_figure_legend(fig, axes[0], ncol=6)
+    save(fig, 'entropy.png', bottom=0.16)
 
 
 def main():
