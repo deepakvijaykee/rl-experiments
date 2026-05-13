@@ -8,6 +8,8 @@ Reproduction commands live in `rl_sandbox/analysis/sweep_manifest.md`.
 Figures in this document and the top-level README can be regenerated with
 `python rl_sandbox/analysis/plot_evidence.py`.
 
+![Research utility frontiers](figures/utility_tradeoffs.png)
+
 ## Token Reversal Influence Baselines
 
 ![Clean token-reversal learning curves](figures/influence.png)
@@ -139,6 +141,8 @@ rollouts no longer provide enough mixed-reward batches.
 ## Entropy-Collapse Diagnostics
 
 ![Entropy and accuracy trajectories](figures/entropy.png)
+
+![Entropy drop by surprisal and delight bucket](figures/entropy_buckets.png)
 
 Command pattern:
 

@@ -58,6 +58,43 @@ def step_summary(df: pd.DataFrame, value: str) -> pd.DataFrame:
     return summary
 
 
+def final_rows(df: pd.DataFrame) -> pd.DataFrame:
+    return df.loc[df.groupby(['label', 'seed']).step.idxmax()].copy()
+
+
+def final_summary(df: pd.DataFrame, value: str) -> pd.DataFrame:
+    rows = final_rows(df).dropna(subset=[value])
+    return (rows.groupby('label', sort=False)[value]
+            .agg(['mean', 'sem']).fillna(0.0).reset_index())
+
+
+def mean_by_seed(df: pd.DataFrame, value: str) -> pd.DataFrame:
+    rows = df.dropna(subset=[value])
+    return (rows.groupby(['label', 'seed'], sort=False)[value]
+            .mean().reset_index())
+
+
+def metric_summary(rows: pd.DataFrame, value: str) -> pd.DataFrame:
+    return (rows.groupby('label', sort=False)[value]
+            .agg(['mean', 'sem']).fillna(0.0).reset_index())
+
+
+def first_crossing_rows(
+    df: pd.DataFrame,
+    value: str,
+    threshold: float,
+) -> pd.DataFrame:
+    records = []
+    for (label, seed), rows in df.dropna(subset=[value]).groupby(['label', 'seed']):
+        hit = rows.loc[rows[value] <= threshold, 'step']
+        records.append({
+            'label': label,
+            'seed': seed,
+            'first_step': hit.iloc[0] if len(hit) else float('nan'),
+        })
+    return pd.DataFrame(records)
+
+
 def style_axis(ax, ylabel: str, title: str | None = None):
     ax.set_xlabel('step')
     ax.set_ylabel(ylabel)
@@ -66,6 +103,33 @@ def style_axis(ax, ylabel: str, title: str | None = None):
     ax.grid(axis='y', alpha=0.18)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
+
+
+def label_points(ax, rows: pd.DataFrame, x: str, y: str):
+    for _, row in rows.iterrows():
+        ax.annotate(row['label'], (row[x], row[y]), xytext=(5, 5),
+                    textcoords='offset points', fontsize=8)
+
+
+def draw_frontier(
+    ax,
+    rows: pd.DataFrame,
+    x: str,
+    y: str,
+    xlabel: str,
+    ylabel: str,
+    title: str,
+):
+    for _, row in rows.iterrows():
+        color = COLORS.get(row['label'])
+        ax.errorbar(row[x], row[y],
+                    xerr=row.get(f'{x}_sem', 0.0),
+                    yerr=row.get(f'{y}_sem', 0.0),
+                    fmt='o', markersize=6, capsize=3,
+                    color=color, ecolor=color)
+    label_points(ax, rows, x, y)
+    style_axis(ax, ylabel, title)
+    ax.set_xlabel(xlabel)
 
 
 def draw_curves(
@@ -223,6 +287,129 @@ def plot_entropy():
     save(fig, 'entropy.png', bottom=0.16)
 
 
+def plot_utility_tradeoffs():
+    entropy = combine([
+        ('results/entropy_dg.csv', 'DG'),
+        ('results/entropy_dgentropyguard.csv', 'DGEntropyGuard'),
+        ('results/entropy_aspo.csv', 'ASPO'),
+        ('results/entropy_r2vpo.csv', 'R2VPO'),
+        ('results/entropy_grpo.csv', 'GRPO'),
+        ('results/entropy_tpo.csv', 'TPO'),
+    ])
+    entropy_error = final_summary(entropy, 'test_error')
+    entropy_level = final_summary(entropy, 'entropy')
+    entropy_frontier = entropy_level.merge(entropy_error, on='label',
+                                           suffixes=('_entropy', '_error'))
+    entropy_frontier = entropy_frontier.rename(columns={
+        'mean_entropy': 'entropy',
+        'sem_entropy': 'entropy_sem',
+        'mean_error': 'error',
+        'sem_error': 'error_sem',
+    })
+
+    replay = combine([
+        ('results/replay_freshdg_cap5_delay4.csv', 'FreshDG cap5'),
+        ('results/replay_replaydg_delay4.csv', 'ReplayDG cap32'),
+        ('results/replay_freshdg_delay4.csv', 'FreshDG cap32'),
+        ('results/replay_freshdg_decay05_delay4.csv', 'FreshDG decay0.5'),
+    ])
+    replay_error = final_summary(replay, 'test_error')
+    replay_age = metric_summary(mean_by_seed(replay, 'replay_age'), 'replay_age')
+    replay_frontier = replay_age.merge(replay_error, on='label',
+                                       suffixes=('_age', '_error'))
+    replay_frontier = replay_frontier.rename(columns={
+        'mean_age': 'age',
+        'sem_age': 'age_sem',
+        'mean_error': 'error',
+        'sem_error': 'error_sem',
+    })
+
+    partial = combine([
+        ('results/masked_axis_ce.csv', 'CE'),
+        ('results/masked_axis_dg.csv', 'DG'),
+        ('results/masked_axis_dgtoken.csv', 'DGToken'),
+        ('results/masked_axis_tpotoken.csv', 'TPOToken'),
+        ('results/masked_axis_grpotoken.csv', 'GRPOToken'),
+    ])
+    partial_scored = final_summary(partial, 'test_error')
+    partial_unscored = final_summary(partial, 'test_error_unscored')
+    partial_frontier = partial_unscored.merge(partial_scored, on='label',
+                                             suffixes=('_unscored', '_scored'))
+    partial_frontier = partial_frontier.rename(columns={
+        'mean_unscored': 'unscored',
+        'sem_unscored': 'unscored_sem',
+        'mean_scored': 'scored',
+        'sem_scored': 'scored_sem',
+    })
+
+    dense = combine([
+        ('results/chain_ce_1500.csv', 'CE'),
+        ('results/chain_selfdistilldg_1500.csv', 'SelfDistillDG'),
+        ('results/chain_scopelite_1500.csv', 'SCOPELite'),
+    ])
+    hit = first_crossing_rows(dense, 'test_error', 0.0)
+    hit_summary = metric_summary(hit, 'first_step')
+    reward_auc = metric_summary(mean_by_seed(dense, 'chain_reward'), 'chain_reward')
+    dense_frontier = hit_summary.merge(reward_auc, on='label',
+                                       suffixes=('_hit', '_reward'))
+    dense_frontier = dense_frontier.rename(columns={
+        'mean_hit': 'first_step',
+        'sem_hit': 'first_step_sem',
+        'mean_reward': 'chain_reward',
+        'sem_reward': 'chain_reward_sem',
+    })
+
+    fig, axes = plt.subplots(2, 2, figsize=(11.4, 7.6))
+    draw_frontier(axes[0, 0], entropy_frontier, 'entropy', 'error',
+                  'final entropy', 'final test error',
+                  'Support/Accuracy Frontier')
+    draw_frontier(axes[0, 1], replay_frontier, 'age', 'error',
+                  'mean replay age', 'final test error',
+                  'Staleness Frontier')
+    draw_frontier(axes[1, 0], partial_frontier, 'unscored', 'scored',
+                  'unscored error', 'scored error',
+                  'Credit Specificity')
+    draw_frontier(axes[1, 1], dense_frontier, 'first_step', 'chain_reward',
+                  'first zero-error step', 'mean chain reward',
+                  'Dense-Correction Efficiency')
+    save(fig, 'utility_tradeoffs.png')
+
+
+def plot_entropy_buckets():
+    data = combine([
+        ('results/entropy_dg.csv', 'DG'),
+        ('results/entropy_dgentropyguard.csv', 'DGEntropyGuard'),
+        ('results/entropy_grpo.csv', 'GRPO'),
+        ('results/entropy_tpo.csv', 'TPO'),
+        ('results/entropy_aspo.csv', 'ASPO'),
+        ('results/entropy_r2vpo.csv', 'R2VPO'),
+    ])
+    labels = ['DG', 'DGEntropyGuard', 'GRPO', 'TPO', 'ASPO', 'R2VPO']
+    bucket_names = ['low', 'mid', 'high']
+    families = {
+        'surprisal': [f'entropy_drop_surprisal_{name}'
+                      for name in bucket_names],
+        'delight': [f'entropy_drop_delight_{name}' for name in bucket_names],
+    }
+
+    fig, axes = plt.subplots(1, 2, figsize=(9.8, 3.8), sharey=True)
+    for ax, (family, cols) in zip(axes, families.items()):
+        for label in labels:
+            rows = data[data['label'] == label]
+            values = [rows[col].dropna().mean() for col in cols]
+            ax.plot(bucket_names, values, marker='o', linewidth=2.0,
+                    color=COLORS.get(label), label=label)
+        ax.axhline(0.0, color='#777777', linewidth=0.8, alpha=0.5)
+        ax.set_title(f'Entropy Drop by {family.title()} Bucket')
+        ax.set_xlabel('bucket')
+        ax.grid(axis='y', alpha=0.18)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+    axes[0].set_ylabel('mean entropy drop')
+    add_figure_legend(fig, axes[0], ncol=6)
+    save(fig, 'entropy_buckets.png', bottom=0.17)
+
+
 def main():
     plot_influence()
     plot_noise()
@@ -230,6 +417,8 @@ def main():
     plot_partial_credit()
     plot_dense_correction()
     plot_entropy()
+    plot_utility_tradeoffs()
+    plot_entropy_buckets()
     print(f'Saved evidence figures to {OUT}')
 
 
