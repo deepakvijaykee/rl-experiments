@@ -5,3 +5,6 @@ plotnine
 transformers
 datasets
 accelerate
+peft
+bitsandbytes
+httpx

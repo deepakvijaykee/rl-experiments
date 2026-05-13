@@ -35,6 +35,7 @@ from sparse rewards.
 ## What Is Included
 
 - **Core sandbox**: [rl_sandbox/](rl_sandbox/)
+- **Standalone small-model RLM GRPO**: [rlm_grpo/](rlm_grpo/)
 - **Reproducible evidence commands**: [rl_sandbox/analysis/sweep_manifest.md](rl_sandbox/analysis/sweep_manifest.md)
 - **Compact results matrix**: [rl_sandbox/analysis/results_matrix.md](rl_sandbox/analysis/results_matrix.md)
 - **Implementation scope**: [rl_sandbox/analysis/implementation_scope.md](rl_sandbox/analysis/implementation_scope.md)

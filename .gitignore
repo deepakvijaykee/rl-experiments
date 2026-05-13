@@ -4,6 +4,7 @@ __pycache__/
 data/
 results/
 results.csv
+outputs/
 scratch/
 
 .pytest_cache/
