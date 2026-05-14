@@ -1,12 +1,10 @@
 # rl-experiments
 
-A small PyTorch sandbox for poking at RL update rules in toy settings.
+A small PyTorch sandbox for analyzing RL update rules in toy settings. A second flow, [`rlm_grpo/`](rlm_grpo/), trains 0.5B–0.6B Hugging Face causal LMs with GRPO and recursive, tree-of-rollouts sampling.
 
-I built it around one practical question:
+The practical question: when feedback is sparse, noisy, or delayed, which samples should actually receive gradient credit?
 
-> When feedback is sparse, noisy, or delayed, which samples should actually receive gradient credit?
-
-This is not a full RLHF or RLVR system. It runs on a single machine, on tasks small enough that the gradient and entropy signals are readable end to end. The focus is the update rule itself; rollout infrastructure is out of scope.
+This is not a full RLHF or RLVR system, and that is the point. A benchmark tells you which update rule got the right answer fastest. The sandbox is built to answer a different question: what does the rule *do* to the policy on the way there? Where does gradient mass concentrate? When does the importance ratio drift far enough that the surrogate stops tracking the objective? At what step does entropy collapse become irreversible? Those are the signals that distributed rollout systems amortize away, and this setup is built to keep them visible.
 
 ## How I think about the problem
 
@@ -27,7 +25,7 @@ Each method in the sandbox makes a different bet on one or two of these axes. Th
 ## What is in here
 
 - [`rl_sandbox/`](rl_sandbox/) is the toy sandbox: bandit and sequence tasks, plus a method registry covering PG, GRPO, DG, TPO, and the smaller families that test specific axes (entropy guards, reward-noise filters, token credit, dense correction). See its [README](rl_sandbox/README.md) for the full method and task menu.
-- [`rlm_grpo/`](rlm_grpo/) is a separate, larger flow: GRPO on 0.5B / 0.6B Hugging Face causal LMs with recursive, tree-of-rollouts sampling.
+- [`rlm_grpo/`](rlm_grpo/) is the LM-scale flow. See its [README](rlm_grpo/README.md) for the training contract (root and child rollouts, reward propagation, child-count normalization) and CLI options.
 - [`rl_sandbox/analysis/`](rl_sandbox/analysis/) is the evidence: reproduction commands, result tables, and figures from compact three-seed runs.
 
 ## Run this first
