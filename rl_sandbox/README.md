@@ -7,7 +7,8 @@ Top-level context, install steps, headline findings, and figures live in the [re
 ## Quick runs
 
 ```bash
-pip install -r requirements.txt
+pip install -e .              # base sandbox
+pip install -e ".[lm-bandit]" # add this if you run the lm_bandit task
 
 python -m rl_sandbox.train --method DG --delay 30
 python -m rl_sandbox.train --task mnist --method TPOFullAction

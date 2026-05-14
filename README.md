@@ -31,12 +31,14 @@ Each method in the sandbox makes a different bet on one or two of these axes. Th
 ## Run this first
 
 ```bash
-pip install -r requirements.txt
+pip install -e .
 
 python -m rl_sandbox.train --task token_reversal --method TPO \
   --batch_size 96 --group_size 8 --inner_epochs 4 \
   --num_steps 300 --eval_every 20 --num_seeds 3
 ```
+
+The base install covers everything in this section. Add `[lm-bandit]` for the HuggingFace LM bandit task, or `[rlm]` for the [`rlm_grpo/`](rlm_grpo/) flow.
 
 Then regenerate the figures:
 

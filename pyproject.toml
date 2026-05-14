@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rl-experiments"
+version = "0.1.0"
+description = "A small PyTorch sandbox for analyzing RL update rules in toy settings, plus a tree-aware GRPO flow for small causal LMs."
+requires-python = ">=3.10"
+dependencies = [
+    "torch",
+    "torchvision",
+    "pandas",
+    "plotnine",
+]
+
+[project.optional-dependencies]
+lm-bandit = [
+    "transformers",
+]
+rlm = [
+    "transformers",
+    "datasets",
+    "accelerate",
+    "peft",
+    "bitsandbytes",
+    "httpx",
+]
+
+[tool.setuptools.packages.find]
+include = ["rl_sandbox*", "rlm_grpo*"]

@@ -23,8 +23,10 @@ Together these two normalizations make a training step approximately tree-shape-
 ## Install
 
 ```bash
-pip install -r requirements.txt
+pip install -e ".[rlm]"
 ```
+
+Run from the repository root. The `rlm` extra pulls in `transformers`, `datasets`, `accelerate`, `peft`, `bitsandbytes`, and `httpx` on top of the base sandbox dependencies.
 
 ## Run
 
