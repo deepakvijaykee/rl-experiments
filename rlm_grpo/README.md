@@ -1,6 +1,6 @@
 # RLM GRPO
 
-A standalone training flow: GRPO on small Hugging Face causal LMs (0.5B–0.6B) with recursive, tree-of-rollouts sampling.
+A standalone training flow: GRPO on small Hugging Face causal LMs (0.5B-0.6B) with recursive, tree-of-rollouts sampling.
 
 Separate from [`rl_sandbox/`](../rl_sandbox/). The sandbox is for inspecting update rules on toy tasks. This flow is the larger setup, where the model generates code, calls itself through `rlm_query`, and gets scored on the final answer.
 
@@ -8,7 +8,7 @@ Separate from [`rl_sandbox/`](../rl_sandbox/). The sandbox is for inspecting upd
 
 A prompt produces `group_size` independent rollout trees. Each root rollout interacts with a persistent Python REPL and can call `rlm_query` or `rlm_query_batched` to spawn child rollouts. The child prompts and child contexts come from the root's generated REPL code, so the tree shape is decided online by the model itself.
 
-When a model recursively calls itself, the natural rollout topology is a tree, and flattening it discards the structure. Treating all decoder steps as one long trajectory collapses the recursion. Training each child independently severs the root reward from the segments that decided what the child would generate in the first place. Tree-aware GRPO keeps the computation graph of the actual rollout intact, and that is the point of the setup.
+When a model recursively calls itself, the natural rollout topology is a tree, and flattening it discards the structure. Treating all decoder steps as one long trajectory collapses the recursion. Training each child independently severs the root reward from the segments that decided what the child would generate in the first place. Tree-aware GRPO keeps the rollout's computation graph intact, and that is the point of the setup.
 
 Only the final root answer earns a reward. That is the only place ground truth lives: the judge or `char_f1` scorer compares predicted evidence against gold evidence, and there is no intermediate-step ground truth unless we stand up a learned verifier, which is deliberately out of scope for this flow. Keeping the reward at the root is also conservative: it avoids baking in assumptions about which intermediate steps should have been good.
 

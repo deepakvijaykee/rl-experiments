@@ -19,7 +19,7 @@ python -m rl_sandbox.train --task token_reversal --batch_size 96 \
 | `GRPO` | `--group_size 8 --inner_epochs 4` | `0.3536 +/- 0.0106` |
 | `TPO` | `--group_size 8 --inner_epochs 4` | `0.2399 +/- 0.0573` |
 
-`TPO` is the strongest in this compact run, and the gap survives the seed variance. The entropy sweep below rules out the simplest alternative explanation (faster entropy collapse), which leaves the candidate-target construction as the working hypothesis for what is actually doing the work. The point I draw from the table on its own is more limited: if you already pay for grouped rollouts, the target-construction step is essentially free and on this task it carries real gain over `GRPO`-style use of the same rollouts.
+`TPO` is the strongest in this compact run, and the gap survives the seed variance. The entropy sweep below rules out the simplest alternative explanation (faster entropy collapse), which leaves the candidate-target construction as the working hypothesis for what is doing the work. The point I draw from the table on its own is more limited: if you already pay for grouped rollouts, the target-construction step is essentially free and on this task it carries the gain over `GRPO`-style use of the same rollouts.
 
 ## Reward-noise robustness
 
@@ -61,7 +61,7 @@ At 300 steps, exact-match `test_error` is too strict to judge the task: even ora
 | `SelfDistillDG` | `1500` | `0.0000 +/- 0.0000` | `466.6667 +/- 125.8306` |
 | `SCOPELite` | `1500` | `0.0000 +/- 0.0000` | `533.3333 +/- 104.0833` |
 
-Both `SelfDistillDG` and `SCOPELite` reach zero exact-match error before `CE` does. The earlier weak `SCOPELite` reading I had at 300 steps was an under-budget artifact rather than a method failure; with 1500 steps the dense-correction path clearly works. What I would chase up at scale is the 200-300 step speedup over `CE` (`SelfDistillDG` first hits zero around step 467 versus `CE` at step 733). If that gap holds with a learned reviser instead of an oracle label, dense correction becomes a real lever for sparse-reward chain tasks beyond the sandbox.
+Both `SelfDistillDG` and `SCOPELite` reach zero exact-match error before `CE` does. The earlier weak `SCOPELite` reading I had at 300 steps was an under-budget artifact rather than a method failure; with 1500 steps the dense-correction path clearly works. What I would chase up at scale is the 200-300 step speedup over `CE` (`SelfDistillDG` first hits zero around step 467 versus `CE` at step 733). If that gap holds with a learned reviser instead of an oracle label, dense correction becomes a usable lever for sparse-reward chain tasks beyond the sandbox.
 
 ## Freshness-aware replay
 
@@ -81,7 +81,7 @@ python -m rl_sandbox.train --task token_reversal --batch_size 96 \
 | `FreshDG` | `--replay_capacity 32` | `0.5946 +/- 0.1391` | `16.4667 +/- 7.9418` |
 | `FreshDG` | `--replay_capacity 32 --replay_age_decay 0.5` | `0.5048 +/- 0.0082` | `7.4444 +/- 5.5496` |
 
-Two regimes, and they tell different stories. Capacity 5 at delay 4 is fixed-age stale replay: every sample is exactly 4 steps old, and `FreshDG` is only marginally more stable than delayed `DG` because the freshness weighting has nothing meaningful to weigh against. Capacity 32 is the interesting case, a stale-buffer stress test where the mean sample age is roughly 16-18 steps, well past the nominal delay. Without freshness decay the buffer collapses entropy, because the gradient averages over policies the current one no longer resembles. With strong decay (`--replay_age_decay 0.5`) the effective age halves and the method recovers. What I read from this table is that buffer capacity is a misleading control variable. The variable that actually determines whether replay helps is the effective sample age distribution, and any replay comparison that does not report it is reporting the wrong axis.
+Two regimes, and they tell different stories. Capacity 5 at delay 4 is fixed-age stale replay: every sample is exactly 4 steps old, and `FreshDG` is only marginally more stable than delayed `DG` because the freshness weighting has nothing meaningful to weigh against. Capacity 32 is the interesting case, a stale-buffer stress test where the mean sample age is roughly 16-18 steps, well past the nominal delay. Without freshness decay the buffer collapses entropy, because the gradient averages over policies the current one no longer resembles. With strong decay (`--replay_age_decay 0.5`) the effective age halves and the method recovers. What I read from this table is that buffer capacity is a misleading control variable. The variable that determines whether replay helps is the effective sample age distribution, and any replay comparison that does not report it is reporting the wrong axis.
 
 ## Masked reversal: partial credit
 
@@ -103,7 +103,7 @@ Grouped and token-candidate methods additionally use `--group_size 8`; token-can
 | `TPOToken` | `--group_size 8 --inner_epochs 4` | `0.0000 +/- 0.0000` | `0.4910 +/- 0.0133` |
 | `GRPOToken` | `--group_size 8 --inner_epochs 4` | `0.1229 +/- 0.2126` | `0.4525 +/- 0.0560` |
 
-Reading the table along both columns is what reveals the trade-offs; reading only the scored column would misrepresent every method here. `TPOToken` drives the scored suffix to zero error and leaves unscored positions at chance, which is the clean partial-credit result. `DGToken` improves the scored suffix relative to sequence-level `DG` but actively damages the unscored positions, because its return-to-go credit concentrates on scored positions. `TEMPO` is out of regime: all three seeds stop early once grouped rollouts no longer carry mixed-reward batches. What I take from this table is that token-level credit is a sharper tool than DG-style sequence credit, not a more powerful one. It routes the existing reward signal more precisely; it cannot recover signal where the reward function does not place any. Comparing token-level methods on scored-suffix accuracy alone misses where the methodological disagreement actually lives.
+Reading the table along both columns is what reveals the trade-offs; reading only the scored column would misrepresent every method here. `TPOToken` drives the scored suffix to zero error and leaves unscored positions at chance, which is the clean partial-credit result. `DGToken` improves the scored suffix relative to sequence-level `DG` but actively damages the unscored positions, because its return-to-go credit concentrates on scored positions. `TEMPO` is out of regime: all three seeds stop early once grouped rollouts no longer carry mixed-reward batches. What I take from this table is that token-level credit is a sharper tool than DG-style sequence credit, not a more powerful one. It routes the existing reward signal more precisely; it cannot recover signal where the reward function does not place any. Comparing token-level methods on scored-suffix accuracy alone misses where the methodological disagreement lives.
 
 ## Entropy-collapse diagnostics
 

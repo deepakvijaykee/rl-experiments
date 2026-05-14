@@ -53,7 +53,7 @@ Grouped by what each family is testing rather than by paper. Implementations are
 
 ## Experiment matrix
 
-The map I actually use when deciding what to run.
+The map I use when deciding what to run.
 
 | Question | Methods | Task and config | What to look at |
 | --- | --- | --- | --- |
