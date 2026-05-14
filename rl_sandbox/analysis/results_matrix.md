@@ -1,18 +1,12 @@
 # Results Matrix
 
-Compact GPU sweeps in this document use three seeds, `batch_size=96`, and the
-default token-reversal model unless noted. They are evidence checks for method
-regimes, not final benchmark claims.
+Compact GPU sweeps. Three seeds, `batch_size=96`, default token-reversal model unless noted. Treat these as regime checks. The absolute numbers move a bit with seed and horizon; the ordering between methods and the shape of the failure modes do not.
 
-Reproduction commands live in `rl_sandbox/analysis/sweep_manifest.md`.
-Figures in this document and the top-level README can be regenerated with
-`python rl_sandbox/analysis/plot_evidence.py`.
+Reproduction commands are in [`sweep_manifest.md`](sweep_manifest.md). Figures (including those embedded in the top-level README) regenerate with `python rl_sandbox/analysis/plot_evidence.py`.
 
-## Token Reversal Influence Baselines
+## Token reversal: clean influence baselines
 
 ![Clean token-reversal learning curves](figures/influence.png)
-
-Command pattern:
 
 ```bash
 python -m rl_sandbox.train --task token_reversal --batch_size 96 \
@@ -25,14 +19,11 @@ python -m rl_sandbox.train --task token_reversal --batch_size 96 \
 | `GRPO` | `--group_size 8 --inner_epochs 4` | `0.3536 +/- 0.0106` |
 | `TPO` | `--group_size 8 --inner_epochs 4` | `0.2399 +/- 0.0573` |
 
-In this compact run, sampled-candidate `TPO` is the strongest token-reversal
-baseline.
+`TPO` is the strongest in this compact run. The entropy sweep below shows the win does not come from faster entropy collapse alone.
 
-## Reward-Noise Robustness
+## Reward-noise robustness
 
 ![False-positive reward-noise learning curves](figures/reward_noise.png)
-
-Command pattern:
 
 ```bash
 python -m rl_sandbox.train --task token_reversal --batch_size 96 \
@@ -51,25 +42,18 @@ python -m rl_sandbox.train --task token_reversal --batch_size 96 \
 | `ASPO` | none | `0.3708 +/- 0.0095` | `0.1531 +/- 0.0589` |
 | `R2VPO` | none | `0.3787 +/- 0.0042` | `0.1811 +/- 0.0428` |
 
-`ASPO` is slightly best in this compact noisy run, though with much lower
-entropy than DG-style methods. `UncertaintyDG` and `RewardVarianceDG` are more
-conservative but slower. `FilteredDG` is brittle with the current batch-level
-uncertainty proxy: the default threshold keeps every batch, while `0.2` drops
-every recent batch and stalls learning.
+`ASPO` wins on final error but pays for it with very low entropy. `UncertaintyDG` and `RewardVarianceDG` are more conservative but slower. `FilteredDG` is brittle: the batch-level uncertainty proxy in ungrouped runs makes the threshold either keep every batch (default) or drop every batch (`0.2`).
 
-## Reward-Chain Dense Correction
+## Reward-chain dense correction
 
-![Reward-chain dense-correction trajectories](figures/dense_correction.png)
-
-Command pattern:
+![Reward-chain dense correction trajectories](figures/dense_correction.png)
 
 ```bash
 python -m rl_sandbox.train --task chain_reversal --batch_size 96 \
   --eval_every 50 --num_seeds 3
 ```
 
-At `300` steps, exact-match `test_error` is too strict to judge the task:
-even oracle `CE` finishes near `0.9867`. At `1500` steps the task is learnable.
+At 300 steps, exact-match `test_error` is too strict to judge the task: even oracle `CE` finishes near `0.9867`. At 1500 steps the task is learnable.
 
 | Method | Steps | Final `test_error` | First zero-error step |
 | --- | ---: | --- | --- |
@@ -77,14 +61,11 @@ even oracle `CE` finishes near `0.9867`. At `1500` steps the task is learnable.
 | `SelfDistillDG` | `1500` | `0.0000 +/- 0.0000` | `466.6667 +/- 125.8306` |
 | `SCOPELite` | `1500` | `0.0000 +/- 0.0000` | `533.3333 +/- 104.0833` |
 
-This validates the dense-correction path: the earlier weak `SCOPELite` result
-was an under-budget exact-match artifact, not a loss failure.
+The earlier weak `SCOPELite` reading was an under-budget exact-match artifact, not a loss failure. Dense correction is fine here.
 
-## Freshness-Aware Replay
+## Freshness-aware replay
 
 ![Replay freshness trajectories](figures/replay.png)
-
-Command pattern:
 
 ```bash
 python -m rl_sandbox.train --task token_reversal --batch_size 96 \
@@ -100,25 +81,18 @@ python -m rl_sandbox.train --task token_reversal --batch_size 96 \
 | `FreshDG` | `--replay_capacity 32` | `0.5946 +/- 0.1391` | `16.4667 +/- 7.9418` |
 | `FreshDG` | `--replay_capacity 32 --replay_age_decay 0.5` | `0.5048 +/- 0.0082` | `7.4444 +/- 5.5496` |
 
-The replay result is regime-sensitive. Capacity `5` with delay `4` exposes
-fixed-age stale replay and makes `FreshDG` slightly more stable than delayed
-`DG`. Capacity `32` becomes a stale-buffer stress test: samples are often much
-older than the nominal delay, causing entropy collapse unless freshness decay
-is strong enough to suppress very old updates.
+Two regimes. Capacity `5` at delay `4` is fixed-age stale replay and `FreshDG` is slightly more stable than delayed `DG`. Capacity `32` is a stale-buffer stress test: samples are typically much older than the nominal delay, and entropy collapses unless freshness decay is strong enough to suppress the very old ones.
 
-## Masked-Reversal Partial Credit
+## Masked reversal: partial credit
 
 ![Masked-reversal scored and unscored trajectories](figures/partial_credit.png)
-
-Command pattern:
 
 ```bash
 python -m rl_sandbox.train --task masked_reversal --batch_size 96 \
   --num_steps 300 --eval_every 20 --num_seeds 3
 ```
 
-Grouped and token-candidate methods additionally use `--group_size 8`; token
-candidate methods use `--inner_epochs 4`.
+Grouped and token-candidate methods additionally use `--group_size 8`; token-candidate methods use `--inner_epochs 4`.
 
 | Method | Extra args | Scored `test_error` | Unscored `test_error` |
 | --- | --- | --- | --- |
@@ -129,18 +103,11 @@ candidate methods use `--inner_epochs 4`.
 | `TPOToken` | `--group_size 8 --inner_epochs 4` | `0.0000 +/- 0.0000` | `0.4910 +/- 0.0133` |
 | `GRPOToken` | `--group_size 8 --inner_epochs 4` | `0.1229 +/- 0.2126` | `0.4525 +/- 0.0560` |
 
-`TPOToken` is the clearest partial-credit result: it drives the scored suffix
-to zero error while leaving unscored positions near chance. `DGToken` improves
-the scored suffix relative to sequence-level DG, but sacrifices unscored-token
-accuracy because its return-to-go credit is concentrated on scored positions.
-`TEMPO` is mostly out of regime here: all three seeds stop early once grouped
-rollouts no longer provide enough mixed-reward batches.
+The cleanest partial-credit result is `TPOToken`: scored suffix to zero error, unscored positions near chance. That is what targeted token credit is supposed to do. `DGToken` improves the scored suffix relative to sequence-level `DG` but sacrifices unscored-token accuracy because its return-to-go credit is concentrated on scored positions. `TEMPO` is mostly out of regime here: all three seeds stop early once grouped rollouts no longer provide enough mixed-reward batches.
 
-## Entropy-Collapse Diagnostics
+## Entropy-collapse diagnostics
 
 ![Entropy and accuracy trajectories](figures/entropy.png)
-
-Command pattern:
 
 ```bash
 python -m rl_sandbox.train --task token_reversal --batch_size 96 \
@@ -149,7 +116,7 @@ python -m rl_sandbox.train --task token_reversal --batch_size 96 \
 
 Grouped methods additionally use `--group_size 8 --inner_epochs 4`.
 
-| Method | Extra args | Final `test_error` | Final entropy | First entropy <= 0.1 |
+| Method | Extra args | Final `test_error` | Final entropy | First entropy `<= 0.1` |
 | --- | --- | --- | --- | --- |
 | `DG` | none | `0.3345 +/- 0.0043` | `0.4695 +/- 0.0243` | n/a |
 | `DGEntropyGuard` | none | `0.3358 +/- 0.0064` | `0.4847 +/- 0.0219` | n/a |
@@ -167,9 +134,4 @@ Grouped methods additionally use `--group_size 8 --inner_epochs 4`.
 | `GRPO` | `-0.0070 +/- 0.0234` | `-0.0090 +/- 0.0263` | `0.0593 +/- 0.0957` |
 | `TPO` | `0.0026 +/- 0.0208` | `-0.0011 +/- 0.0215` | `0.0049 +/- 0.0187` |
 
-`GRPO` collapses entropy earliest in this compact run. `ASPO` and `R2VPO`
-also reach very low entropy around step `100`, despite only moderate final
-accuracy. `TPO` keeps entropy near DG while reaching the best error, suggesting
-that its candidate-target update is not simply winning by faster entropy
-collapse. `DGEntropyGuard` modestly reduces positive-advantage entropy drop
-while preserving DG accuracy, but the effect is small on this easy task.
+`GRPO` collapses entropy earliest. `ASPO` and `R2VPO` reach very low entropy around step 100 despite only middling final accuracy. `TPO` keeps entropy near `DG` while reaching the best final error, which is the main reason I do not read its win as "just faster collapse." `DGEntropyGuard` modestly reduces positive-advantage entropy drop while keeping `DG`'s accuracy, but the effect is small on this easy task.

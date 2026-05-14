@@ -1,63 +1,66 @@
 # rl-experiments
 
-A single-machine research sandbox for studying **influence allocation in
-post-training RL**: which sampled trajectories, branches, and tokens deserve
-gradient budget under rollout, update, support, staleness, reward-noise, and
-entropy-collapse constraints.
+A small PyTorch sandbox for poking at RL update rules in toy settings.
 
-The repo is not a leaderboard or a full distributed RLHF/RLVR reproduction. It
-isolates update rules and diagnostics in toy settings where the behavior is
-cheap to inspect and compare.
+I built it around one practical question:
 
-## Thesis
+> When feedback is sparse, noisy, or delayed, which samples should actually receive gradient credit?
 
-Post-training RL is often framed around the objective family: PPO, GRPO, DPO,
-RLVR, rejection sampling, or distillation. This repo frames the problem one
-level lower:
+This is not a full RLHF or RLVR system. It runs on a single machine, on tasks small enough that the gradient and entropy signals are readable end to end. The focus is the update rule itself; rollout infrastructure is out of scope.
 
-> What is the right influence function over sampled trajectories and tokens,
-> if the goal is fastest improvement per unit of online rollout, learner update,
-> and KL/support budget?
+## How I think about the problem
 
-That decomposes into five concrete questions:
+Most post-training RL papers organize themselves by objective family: PPO, GRPO, DPO, RLVR, rejection sampling, distillation. I find that framing too coarse for picking what to try next. The more useful question, for me, sits one level below the objective:
 
-1. **Influence allocation**: which samples should receive gradient budget?
-2. **Credit granularity**: should credit land on trajectories, branches, or tokens?
-3. **Support and coverage**: when is sampled data still informative?
-4. **Reward uncertainty**: when does rare high reward mean a breakthrough versus a proxy mistake?
-5. **Optimization geometry**: how do clipping, ratios, normalization, replay, and entropy interact?
+> Given a fixed budget of online rollouts, learner updates, and KL distance from the reference policy, which samples should receive gradient weight, and at what granularity?
 
-DG-style delight, `advantage * surprisal`, is one influence signal. The sandbox
-compares it against RLVR baselines, TPO-style candidate targets, replay
-freshness, uncertainty heuristics, entropy diagnostics, and dense correction
-from sparse rewards.
+It breaks into five axes, each of which is a failure mode the sandbox can reproduce cheaply.
 
-## What Is Included
+1. **Influence allocation.** Should every sample contribute uniformly, or should the update weight by advantage, surprisal, or some product of the two? `DG`-style delight (`advantage × surprisal`) is one bet. GRPO's group-normalized advantage is another. Plain REINFORCE is the null hypothesis.
+2. **Credit granularity.** Trajectory, branch, or token. Sparse-reward tasks need a credit story even when the feedback is one bit. Dense-reward tasks waste signal if you flatten everything back to a sequence score. `TPOToken` and `DGToken` are the per-token bets here.
+3. **Support and coverage.** When is logged data still informative? Old rollouts have stale importance ratios. Bigger replay buffers reduce variance, but only inside a freshness window. Outside that window you are training against a different policy. `ReplayDG` and `FreshDG` are the diagnostics.
+4. **Reward uncertainty.** When does a rare high reward signal a breakthrough versus a proxy mistake? Filtering, uncertainty heuristics, and reward-variance penalties all try to answer this. They fail differently: wrong proxy granularity, premature entropy collapse, or just too slow. `UncertaintyDG`, `FilteredDG`, `RewardVarianceDG`, `ASPO`, and `R2VPO` cover the spectrum from conservative gating to ratio-variance regularization.
+5. **Optimization geometry.** Clipping, ratio variance, normalization, KL terms, entropy. The wrong combination collapses entropy inside 100 steps even when the loss curve looks healthy. The entropy-collapse sweep is the cheapest way to see this.
 
-- **Core sandbox**: [rl_sandbox/](rl_sandbox/)
-- **Standalone small-model RLM GRPO**: [rlm_grpo/](rlm_grpo/)
-- **Reproducible evidence commands**: [rl_sandbox/analysis/sweep_manifest.md](rl_sandbox/analysis/sweep_manifest.md)
-- **Compact results matrix**: [rl_sandbox/analysis/results_matrix.md](rl_sandbox/analysis/results_matrix.md)
-- **Implementation scope**: [rl_sandbox/analysis/implementation_scope.md](rl_sandbox/analysis/implementation_scope.md)
+Each method in the sandbox makes a different bet on one or two of these axes. The repo lets me compare them on tasks small enough to inspect the gradient directly.
 
-## Current Findings
+## What is in here
 
-These are compact three-seed GPU checks, not final benchmark claims.
+- [`rl_sandbox/`](rl_sandbox/) is the toy sandbox: bandit and sequence tasks, plus a method registry covering PG, GRPO, DG, TPO, and the smaller families that test specific axes (entropy guards, reward-noise filters, token credit, dense correction). See its [README](rl_sandbox/README.md) for the full method and task menu.
+- [`rlm_grpo/`](rlm_grpo/) is a separate, larger flow: GRPO on 0.5B / 0.6B Hugging Face causal LMs with recursive, tree-of-rollouts sampling.
+- [`rl_sandbox/analysis/`](rl_sandbox/analysis/) is the evidence: reproduction commands, result tables, and figures from compact three-seed runs.
 
-| Axis | Current evidence |
-| --- | --- |
-| Clean token reversal | `TPO` is strongest in the compact run: `0.2399 +/- 0.0573` final error versus `DG` at `0.3345 +/- 0.0043` and `GRPO` at `0.3536 +/- 0.0106`. |
-| Reward noise | `ASPO` is slightly best under false-positive rare-token noise, but with much lower entropy than DG-style methods. `FilteredDG` is brittle because its current uncertainty proxy is batch-level in ungrouped runs. |
-| Replay freshness | Fixed-age replay, `delay=4` with `replay_capacity=5`, makes `FreshDG` slightly more stable than delayed `DG`. Capacity `32` is a stale-buffer stress test and can collapse entropy. |
-| Partial token credit | `TPOToken` drives masked-reversal scored suffix error to `0.0000 +/- 0.0000` while unscored positions remain near chance, showing targeted credit rather than dense sequence learning. |
-| Dense correction | `SelfDistillDG` and `SCOPELite` solve `chain_reversal` faster than CE at the 1500-step horizon; the 300-step exact-match result was under-budget. |
-| Entropy collapse | `GRPO` collapses entropy earliest in the compact entropy sweep. `TPO` keeps entropy near DG while reaching the best error, so its win is not just faster entropy collapse. |
+## Run this first
 
-## Evidence Plots
+```bash
+pip install -r requirements.txt
 
-Figures show mean +/- standard error across the compact three-seed sweeps. They
-plot trajectories rather than only final bars so collapse, stalls, and recovery
-are visible.
+python -m rl_sandbox.train --task token_reversal --method TPO \
+  --batch_size 96 --group_size 8 --inner_epochs 4 \
+  --num_steps 300 --eval_every 20 --num_seeds 3
+```
+
+Then regenerate the figures:
+
+```bash
+python rl_sandbox/analysis/plot_evidence.py
+```
+
+The reward-noise, replay, partial-credit, dense-correction, and entropy sweeps live in [`rl_sandbox/analysis/sweep_manifest.md`](rl_sandbox/analysis/sweep_manifest.md). They run end to end on one GPU.
+
+## What I actually learned
+
+Three seeds per cell, small batches, short horizons. The absolute numbers are vibes-level. Ordering between methods and the shape of the failure modes hold up across seeds, and that is what I trust.
+
+- Sampled-candidate `TPO` was the strongest method on clean token-reversal. It learned faster than `GRPO` and `DG`, and it kept entropy at roughly `DG`'s level while doing so. That rules out the obvious story that its win is just faster collapse; the candidate-target update appears to be doing structural work beyond shrinking the action distribution.
+- Replay only helps in a narrow band. A fixed-age stale buffer (capacity 5 at delay 4) is fine. A bigger buffer (capacity 32) is a stale-buffer trap: samples become much older than the nominal delay, and entropy collapses unless freshness decay is strong enough to suppress the old ones. The lesson generalizes: stale-data variance reduction is a Goldilocks problem.
+- Token-level credit lands exactly where the reward does. `TPOToken` drives the scored suffix of `masked_reversal` to zero error while unscored positions stay near chance. Good for partial credit. Also a sharp reminder that the reward shape is doing most of the work upstream. Dense token reward is not a free lunch you can replace with smarter credit assignment.
+- Reward-noise heuristics break for boring reasons. `FilteredDG` looked promising until I checked: its uncertainty proxy is batch-level in ungrouped runs, so the threshold either keeps every batch or drops every batch. `ASPO` is more robust under false-positive rare-token noise, but it pays for that with very low entropy — a different failure mode hiding inside a robustness win.
+- `GRPO` collapses entropy earliest in the entropy sweep, even when its final accuracy is comparable to DG-class methods. The toy setup catches this inside 300 steps.
+
+## Evidence plots
+
+Mean and standard error across three seeds. Full trajectories rather than only final bars, so stalls and collapses are visible.
 
 | Influence | Reward noise |
 | --- | --- |
@@ -71,95 +74,11 @@ are visible.
 | --- | --- |
 | ![Reward-chain dense correction trajectories](rl_sandbox/analysis/figures/dense_correction.png) | ![Entropy and accuracy trajectories](rl_sandbox/analysis/figures/entropy.png) |
 
-## Method Taxonomy
+Full numbers live in [`rl_sandbox/analysis/results_matrix.md`](rl_sandbox/analysis/results_matrix.md). Implementation-scope notes (what each method does and does not include here) are in [`rl_sandbox/analysis/implementation_scope.md`](rl_sandbox/analysis/implementation_scope.md).
 
-| Category | Methods | Scope |
-| --- | --- | --- |
-| Reference baselines | `CE`, `REINFORCE`, `PG`, `TrajPG` | Standard supervised or policy-gradient references for toy tasks. |
-| Canonical RLVR baselines | `GRPO`, `DrGRPO`, `DAPOLite` | Scoped implementations of group-relative rewards, clipping, normalization, and DAPO-lite design choices. |
-| Candidate-target baselines | `TPO`, `TPONoAnchor`, `GroupPG`, `TPOFullAction`, `TPOToken`, `GRPOToken` | Local TPO-style candidate-simplex objectives, including full-action MNIST and per-prefix token candidates. |
-| Influence methods | `DG`, `Kondo`, `DGToken` | Delight gating, compute-aware screening, and token return-to-go credit. |
-| Credit and normalization | `TEMPO`, `MaxRL`, `LogGrowth`, `PMDMean` | Prefix-tree credit, binary grouped normalization, and alternate objective geometry. |
-| Replay and freshness | `ReplayDG`, `FreshDG` | DG composed with replay sampling and explicit age weighting. |
-| Robustness diagnostics | `DGEntropyGuard`, `UncertaintyDG`, `FilteredDG`, `RewardVarianceDG`, `R2VPO`, `ASPO` | Entropy-collapse and reward-noise stress tests. |
-| Dense-correction toys | `SelfDistillDG`, `SCOPELite` | Oracle-label bridges from sparse reward to dense token correction. |
+## Scope
 
-Paper-named methods are scoped to the local batch/task contract. Large-system
-components such as distributed rollout workers, learned critics, verifier
-serving, and production reward pipelines are intentionally out of scope.
-
-## Run First
-
-Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-Influence baseline:
-
-```bash
-python -m rl_sandbox.train --task token_reversal --method TPO \
-  --batch_size 96 --group_size 8 --inner_epochs 4 \
-  --num_steps 300 --eval_every 20 --num_seeds 3
-```
-
-Replay freshness:
-
-```bash
-python -m rl_sandbox.train --task token_reversal --method FreshDG \
-  --batch_size 96 --delay 4 --replay_capacity 5 \
-  --num_steps 300 --eval_every 20 --num_seeds 3
-```
-
-Reward-noise robustness:
-
-```bash
-python -m rl_sandbox.train --task token_reversal --method UncertaintyDG \
-  --batch_size 96 --reward_noise 0.2 \
-  --reward_noise_mode false_positive_rare_token \
-  --num_steps 300 --eval_every 20 --num_seeds 3
-```
-
-Partial token credit:
-
-```bash
-python -m rl_sandbox.train --task masked_reversal --method TPOToken \
-  --batch_size 96 --group_size 8 --inner_epochs 4 \
-  --num_steps 300 --eval_every 20 --num_seeds 3
-```
-
-Dense correction:
-
-```bash
-python -m rl_sandbox.train --task chain_reversal --method SCOPELite \
-  --batch_size 96 --num_steps 1500 --eval_every 50 --num_seeds 3
-```
-
-Entropy diagnostics:
-
-```bash
-python -m rl_sandbox.train --task token_reversal --method DGEntropyGuard \
-  --batch_size 96 --entropy_diagnostics true \
-  --num_steps 300 --eval_every 20 --num_seeds 3
-```
-
-For the full compact evidence suite, use
-[rl_sandbox/analysis/sweep_manifest.md](rl_sandbox/analysis/sweep_manifest.md).
-
-```bash
-python rl_sandbox/analysis/plot_evidence.py
-```
-
-## Tasks
-
-- `mnist`: one-step contextual bandit
-- `token_reversal`: autoregressive sequence reversal
-- `masked_reversal`: suffix-scored partial-credit reversal
-- `chain_reversal`: ordered checkpoint reward-chain reversal
-- `chain_arithmetic`: copy-plus-modular-answer reward chain
-- `format_answer`: format-token plus answer-token reward chain
-- `lm_bandit`: next-token LM bandit
+Single machine. CUDA when available, CPU otherwise. The sandbox does not include distributed rollout, a learned critic, or a production reward pipeline. Method implementations are scoped to the local batch and task contract: the goal is to inspect the update rule itself, on a setup small enough that the gradient and entropy signals are readable. Where scoping the method would silently change its meaning (for example, normalizing rewards in a regime where the paper assumes a critic), the trainer rejects the config rather than running a misleading variant.
 
 ## Verification
 

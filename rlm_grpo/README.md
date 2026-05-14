@@ -1,19 +1,19 @@
 # RLM GRPO
 
-Train 0.5B/0.6B Hugging Face causal LMs with recursive language model rollouts
-and a tree-aware GRPO update.
+A standalone training flow: GRPO on small Hugging Face causal LMs (0.5B–0.6B) with recursive, tree-of-rollouts sampling.
 
-## Training Contract
+Separate from [`rl_sandbox/`](../rl_sandbox/). The sandbox is for inspecting update rules on toy tasks. This flow is the larger setup, where the model generates code, calls itself through `rlm_query`, and gets scored on the final answer.
 
-- Each prompt samples `group_size` independent root rollout trees.
-- Root rollouts interact with a persistent Python REPL and can call
-  `rlm_query` or `rlm_query_batched` to spawn child rollouts.
-- Child prompts and child contexts come from the root's generated REPL code.
-- Only the final root answer is rewarded.
-- The root advantage is assigned to all generated root and child policy
-  segments in the rollout tree.
-- Child trajectories are normalized by child count, then split across the
-  generated turns inside each child rollout.
+## How a training step works
+
+A prompt produces `group_size` independent rollout trees. Each root rollout interacts with a persistent Python REPL and can call `rlm_query` or `rlm_query_batched` to spawn child rollouts. Child prompts and child contexts come from the root's generated REPL code, so the tree shape is decided online.
+
+Only the final root answer earns a reward. That reward then propagates back:
+
+- The root advantage is assigned to every root and child policy segment in the tree.
+- Child trajectories are normalized by child count, then split across the generated turns inside each child rollout.
+
+The child-count normalization matters more than it looks. Without it, prompts that happen to spawn many children dominate the gradient on that step.
 
 ## Install
 
@@ -23,16 +23,11 @@ pip install -r requirements.txt
 
 ## Run
 
-The default reward mode uses an OpenAI-compatible judge over the question, gold
-evidence, and predicted evidence:
+The default reward uses an OpenAI-compatible judge over the question, gold evidence, and predicted evidence:
 
 ```bash
 export OPENAI_API_KEY=...
-```
 
-Qwen2.5 0.5B:
-
-```bash
 python -m rlm_grpo.cli \
   --model_name Qwen/Qwen2.5-0.5B-Instruct \
   --output_dir outputs/rlm-qwen25-05b \
@@ -42,7 +37,7 @@ python -m rlm_grpo.cli \
   --max_steps 100
 ```
 
-Qwen3 0.6B:
+Qwen3 0.6B with `<think>` disabled:
 
 ```bash
 python -m rlm_grpo.cli \
@@ -55,7 +50,7 @@ python -m rlm_grpo.cli \
   --max_steps 100
 ```
 
-For deterministic local scoring against gold evidence spans:
+If you do not want to spend on a judge, score against gold evidence spans directly:
 
 ```bash
 python -m rlm_grpo.cli \
@@ -64,7 +59,7 @@ python -m rlm_grpo.cli \
   --output_dir outputs/rlm-qwen25-05b-char-f1
 ```
 
-The default dataset is `alphaXiv/multi-paper-synthetic`. To use a local dataset:
+The default dataset is `alphaXiv/multi-paper-synthetic`. To use a local file:
 
 ```bash
 python -m rlm_grpo.cli \
