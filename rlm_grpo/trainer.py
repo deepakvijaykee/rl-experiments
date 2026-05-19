@@ -102,6 +102,12 @@ class RLMGRPOConfig:
             raise ValueError("update_epochs must be >= 1")
         if self.segment_micro_batch_size < 1:
             raise ValueError("segment_micro_batch_size must be >= 1")
+        if self.max_steps < 1:
+            raise ValueError("max_steps must be >= 1")
+        if self.log_every < 1:
+            raise ValueError("log_every must be >= 1")
+        if self.save_every < 1:
+            raise ValueError("save_every must be >= 1")
         if self.max_children < 1:
             raise ValueError("max_children must be >= 1")
         if self.max_children_per_call < 1:
@@ -114,20 +120,52 @@ class RLMGRPOConfig:
             raise ValueError("repl_timeout must be >= 1")
         if self.max_observation_chars < 1:
             raise ValueError("max_observation_chars must be >= 1")
+        if self.max_prompt_tokens < 1:
+            raise ValueError("max_prompt_tokens must be >= 1")
+        if self.max_plan_tokens < 1:
+            raise ValueError("max_plan_tokens must be >= 1")
+        if self.max_child_tokens < 1:
+            raise ValueError("max_child_tokens must be >= 1")
+        if self.max_reward_predictions < 1:
+            raise ValueError("max_reward_predictions must be >= 1")
         if self.learning_rate <= 0:
             raise ValueError("learning_rate must be > 0")
+        if self.weight_decay < 0:
+            raise ValueError("weight_decay must be non-negative")
+        if self.max_grad_norm <= 0:
+            raise ValueError("max_grad_norm must be > 0")
         if self.clip_epsilon < 0:
             raise ValueError("clip_epsilon must be non-negative")
         if self.kl_coef < 0:
             raise ValueError("kl_coef must be non-negative")
         if self.reward_mode not in {"judge", "char_f1"}:
             raise ValueError("reward_mode must be 'judge' or 'char_f1'")
+        if self.reward_mode == "judge":
+            if not self.judge_model.strip():
+                raise ValueError("judge_model must be set for reward_mode='judge'")
+            if not self.judge_base_url.strip():
+                raise ValueError("judge_base_url must be set for reward_mode='judge'")
+            if not self.judge_api_key_env.strip():
+                raise ValueError("judge_api_key_env must be set for reward_mode='judge'")
         if self.judge_timeout_seconds <= 0:
             raise ValueError("judge_timeout_seconds must be > 0")
         if self.judge_max_retries < 1:
             raise ValueError("judge_max_retries must be >= 1")
         if self.load_in_4bit and not self.use_peft:
             raise ValueError("4-bit training requires use_peft=true")
+        if self.use_peft:
+            if self.lora_r < 1:
+                raise ValueError("lora_r must be >= 1")
+            if self.lora_alpha < 1:
+                raise ValueError("lora_alpha must be >= 1")
+            if self.lora_dropout < 0 or self.lora_dropout > 1:
+                raise ValueError("lora_dropout must be in [0, 1]")
+            if not self.lora_target_modules:
+                raise ValueError("lora_target_modules must not be empty")
+            if any(not module.strip() for module in self.lora_target_modules):
+                raise ValueError("lora_target_modules must not contain empty names")
+        if self.max_train_examples is not None and self.max_train_examples < 1:
+            raise ValueError("max_train_examples must be >= 1")
 
 
 @dataclass
@@ -152,6 +190,55 @@ class RLMRolloutTree:
 def _mean(values: Iterable[float]) -> float:
     values = list(values)
     return sum(values) / len(values) if values else 0.0
+
+
+TOKEN_WEIGHTED_METRICS = {"ratio_mean", "clip_frac", "kl_mean"}
+SEGMENT_WEIGHTED_METRICS = {"segment_loss"}
+
+
+def _weighted_mean(
+        metrics: list[dict[str, float]],
+        key: str,
+        weight_key: str) -> float:
+    weighted_records = [record for record in metrics if key in record]
+    total_weight = sum(record[weight_key] for record in weighted_records)
+    if total_weight <= 0:
+        return 0.0
+    return (
+        sum(record[key] * record[weight_key] for record in weighted_records)
+        / total_weight
+    )
+
+
+def aggregate_update_metrics(
+        metrics: list[dict[str, float]],
+        loss_denominator: float = 1.0) -> dict[str, float]:
+    """Aggregate microbatch metrics with the denominator each metric used."""
+    if not metrics:
+        raise ValueError("cannot aggregate empty update metrics")
+    if loss_denominator <= 0:
+        raise ValueError("loss_denominator must be positive")
+
+    keys = dict.fromkeys(
+        key
+        for record in metrics
+        for key in record
+        if not key.startswith("_")
+    )
+    out = {}
+    for key in keys:
+        if key in TOKEN_WEIGHTED_METRICS:
+            out[key] = _weighted_mean(metrics, key, "_metric_tokens")
+        elif key in SEGMENT_WEIGHTED_METRICS:
+            out[key] = _weighted_mean(metrics, key, "_metric_segments")
+        elif key == "loss":
+            out[key] = (
+                sum(record[key] for record in metrics if key in record)
+                / loss_denominator
+            )
+        else:
+            out[key] = _mean(record[key] for record in metrics if key in record)
+    return out
 
 
 class RLMGRPOTrainer:
@@ -250,6 +337,8 @@ class RLMGRPOTrainer:
                     model,
                     use_gradient_checkpointing=self.config.gradient_checkpointing,
                 )
+            elif self.config.gradient_checkpointing:
+                model.gradient_checkpointing_enable()
             lora_config = LoraConfig(
                 task_type=TaskType.CAUSAL_LM,
                 r=self.config.lora_r,
@@ -631,6 +720,8 @@ class RLMGRPOTrainer:
         )
         loss = (segment_losses * weights).sum() / max(num_trees, 1)
         metrics["segment_loss"] = segment_losses.mean().item()
+        metrics["_metric_tokens"] = mask.float().sum().item()
+        metrics["_metric_segments"] = float(len(segments))
         return loss, metrics
 
     def _update(self, segments: list[RLMTrainingSegment], num_trees: int) -> dict[str, float]:
@@ -653,10 +744,10 @@ class RLMGRPOTrainer:
             )
             self.optimizer.step()
 
-        out = {}
-        for key in metrics_accum[0]:
-            out[key] = _mean(m[key] for m in metrics_accum if key in m)
-        return out
+        return aggregate_update_metrics(
+            metrics_accum,
+            loss_denominator=float(self.config.update_epochs),
+        )
 
     def train(self):
         if self.model is None:

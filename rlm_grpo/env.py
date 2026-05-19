@@ -407,14 +407,14 @@ class RLMReplEnv:
         )
 
     def _execute_response(self, response: str) -> tuple[str, Any | None]:
-        final = self._find_final_answer(response)
-        if final is not None:
-            return "", final
         try:
             code = extract_repl_code(response)
         except ValueError as exc:
             return str(exc), None
         if code is None:
+            final = self._find_final_answer(response)
+            if final is not None:
+                return "", final
             return "No executable ```repl block found. Submit exactly one repl block.", None
 
         stdout = io.StringIO()

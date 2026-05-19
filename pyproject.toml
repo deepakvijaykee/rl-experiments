@@ -17,6 +17,7 @@ dependencies = [
 [project.optional-dependencies]
 lm-bandit = [
     "transformers",
+    "datasets",
 ]
 rlm = [
     "transformers",
@@ -28,4 +29,4 @@ rlm = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["rl_sandbox*", "rlm_grpo*"]
+include = ["rl_sandbox*", "rlm_grpo*", "opd_sandbox*"]

@@ -574,6 +574,16 @@ def _validate_basic_config(config: Config):
         raise ValueError('num_seeds must be >= 1')
     if config.lr <= 0:
         raise ValueError('lr must be > 0')
+    if config.hidden < 1:
+        raise ValueError('hidden must be >= 1')
+    if config.d_model < 1:
+        raise ValueError('d_model must be >= 1')
+    if config.nhead < 1:
+        raise ValueError('nhead must be >= 1')
+    if config.d_model % config.nhead != 0:
+        raise ValueError('d_model must be divisible by nhead')
+    if config.num_layers < 1:
+        raise ValueError('num_layers must be >= 1')
     if config.baseline not in BASELINES:
         raise ValueError(f'Unknown baseline: {config.baseline}')
     if config.inner_epochs < 1:
@@ -600,6 +610,8 @@ def _validate_basic_config(config: Config):
         raise ValueError('vocab_size must be >= 1')
     if config.context_len < 1:
         raise ValueError('context_len must be >= 1')
+    if config.kl_weight < 0:
+        raise ValueError('kl_weight must be >= 0')
 
 
 def _validate_reward_noise_config(config: Config):
@@ -703,6 +715,8 @@ def _validate_method_hyperparams(config: Config):
         raise ValueError('kondo_keep must be in (0, 1]')
     if config.clip_low < 0 or config.clip_high < 0:
         raise ValueError('clip bounds must be non-negative')
+    if config.iw_cap <= 0:
+        raise ValueError('iw_cap must be > 0')
     if config.method in ETA_METHODS and config.eta <= 0:
         raise ValueError(f'{config.method} requires eta > 0')
     if config.method in TPO_METHODS and config.tpo_eta <= 0:

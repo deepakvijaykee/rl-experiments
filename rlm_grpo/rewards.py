@@ -107,10 +107,30 @@ def extract_evidence_strings(completion: str) -> list[str]:
 
 
 def gold_evidence_strings(reward_spec: dict[str, Any]) -> list[str]:
+    if "evidence" not in reward_spec:
+        raise ValueError("reward_spec must contain an evidence list")
+    evidence = reward_spec["evidence"]
+    if type(evidence) is not list:
+        raise ValueError("reward_spec.evidence must be a list")
+
     out: list[str] = []
-    for entry in reward_spec["evidence"]:
-        for selection in entry["selections"]:
-            text = selection["text"]
+    for entry_idx, entry in enumerate(evidence):
+        if type(entry) is not dict:
+            raise ValueError(f"reward_spec.evidence[{entry_idx}] must be a mapping")
+        selections = entry.get("selections", [])
+        if type(selections) is not list:
+            raise ValueError(
+                f"reward_spec.evidence[{entry_idx}].selections must be a list")
+        for selection_idx, selection in enumerate(selections):
+            if type(selection) is not dict:
+                raise ValueError(
+                    "reward_spec.evidence"
+                    f"[{entry_idx}].selections[{selection_idx}] must be a mapping")
+            text = selection.get("text", "")
+            if type(text) is not str:
+                raise ValueError(
+                    "reward_spec.evidence"
+                    f"[{entry_idx}].selections[{selection_idx}].text must be a string")
             if text and text.strip():
                 out.append(text)
     return out

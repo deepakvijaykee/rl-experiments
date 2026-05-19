@@ -32,6 +32,8 @@ class RLMTrainingSegment:
     def __post_init__(self):
         if self.role not in {ROOT_ROLE, CHILD_ROLE}:
             raise ValueError(f"unknown RLM segment role: {self.role}")
+        if not self.prompt_ids:
+            raise ValueError("RLMTrainingSegment requires prompt tokens")
         if not self.completion_ids:
             raise ValueError("RLMTrainingSegment requires generated completion tokens")
         if len(self.completion_ids) != len(self.old_logprobs):

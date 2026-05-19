@@ -849,7 +849,7 @@ class LMBandit:
         wrapper = CausalLMWrapper(hf_model)
         if self.kl_weight > 0:
             ref_hf = AutoModelForCausalLM.from_pretrained(
-                self.model_name, dtype=torch.bfloat16)
+                self.model_name, torch_dtype=torch.bfloat16)
             self.ref_model = CausalLMWrapper(ref_hf)
             self.ref_model.eval()
             for p in self.ref_model.parameters():

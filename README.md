@@ -2,6 +2,9 @@
 
 A small PyTorch sandbox for analyzing RL update rules in toy settings. A second flow, [`rlm_grpo/`](rlm_grpo/), trains small causal LMs with GRPO and recursive, tree-of-rollouts sampling.
 
+The OPD appendix lives separately in [`opd_sandbox/`](opd_sandbox/) so
+distillation-specific experiments do not blur the reward-update sandbox.
+
 The practical question: when feedback is sparse, noisy, or delayed, which samples should receive gradient credit?
 
 This is not a full RLHF or RLVR system, and that is the point. A benchmark tells you which update rule got the right answer fastest. The sandbox is built to answer a different question: what does the rule *do* to the policy on the way there? Where does gradient mass concentrate? When does the importance ratio drift far enough that the surrogate stops tracking the objective? At what step does entropy collapse become irreversible? Those are the signals that distributed rollout systems amortize away, and this setup is built to keep them visible.
@@ -25,6 +28,7 @@ Each method in the sandbox makes a different bet on one or two of these axes. Th
 ## What is in here
 
 - [`rl_sandbox/`](rl_sandbox/) is the toy sandbox: bandit and sequence tasks, plus a method registry covering PG, GRPO, DG, TPO, and the smaller families that test specific axes (entropy guards, reward-noise filters, token credit, dense correction). See its [README](rl_sandbox/README.md) for the full method and task menu.
+- [`opd_sandbox/`](opd_sandbox/) is the OPD appendix sandbox: exact reverse-KL and sampled-token OPD on student-sampled toy prefixes with a smoothed oracle teacher.
 - [`rlm_grpo/`](rlm_grpo/) is the LM-scale flow. See its [README](rlm_grpo/README.md) for the training contract (root and child rollouts, reward propagation, child-count normalization) and CLI options.
 - [`rl_sandbox/analysis/`](rl_sandbox/analysis/) is the evidence: reproduction commands, result tables, and figures from compact three-seed runs.
 

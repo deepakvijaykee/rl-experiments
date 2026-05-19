@@ -17,6 +17,10 @@ Usage:
 """
 
 import argparse
+import os
+from pathlib import Path
+
+os.environ.setdefault('MPLCONFIGDIR', '/tmp/matplotlib')
 
 import torch
 import torch.nn.functional as F
@@ -230,6 +234,8 @@ def main():
 
     steps = [int(s.strip()) for s in args.train_steps.split(',') if s.strip()]
     df = run_analysis(config, train_steps_list=steps)
+    output_parent = Path(args.output).parent
+    output_parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(f'{args.output}.csv', index=False)
     plot_results(df, output_prefix=args.output)
 
