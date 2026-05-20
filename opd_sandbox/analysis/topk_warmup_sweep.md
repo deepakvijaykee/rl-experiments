@@ -1,17 +1,11 @@
 # Top-k warmup sweep
 
-This appendix run asks whether there is a measurable switch threshold for
-top-k OPD. The previous cold-start run showed that switching after 100
-full-vocabulary steps was too early. Here we sweep the warmup length and test
-two truncation widths:
+The cold-start probe established that 100 full-vocabulary steps is too short a warmup to stabilize student-top-k truncation. The natural next move is to sweep warmup length more thoroughly and find the threshold. Doing the sweep at a single truncation width would only tell part of the story, because the meaning of "top-k" depends on how aggressive the truncation is. This run tests two widths in parallel:
 
-- `k=4`, covering less than half the action space.
-- `k=8`, covering all but one action token.
+- `k=4`, which covers less than half the action space.
+- `k=8`, which covers all but one action token.
 
-Those two values ask different questions. `k=8` is a mild regularizer over the
-nine-token vocabulary. `k=4` cuts the policy down to roughly half its action
-space, which is a different kind of intervention. Treating both as "top-k"
-without this distinction would hide the mechanism.
+`k=8` is a mild regularizer over the nine-token vocabulary; it excludes only one action, and rarely the teacher's preferred one once any warmup has happened. `k=4` cuts the policy down to roughly half its action space, which is a different kind of intervention. Averaging both under the label "top-k" would hide the mechanism, because the threshold at which either becomes stable depends on which one is being used.
 
 ## Command
 
@@ -59,10 +53,7 @@ Final greedy test error at step 300:
 | 8 | 200 | 0.0022 +/- 0.0023 | 0.0779 +/- 0.0342 |
 | 8 | 250 | 0.0011 +/- 0.0010 | 0.0692 +/- 0.0327 |
 
-The threshold is visible but depends strongly on support width. With `k=8`,
-top-k is nearly full-vocabulary and becomes close to stable after 150 warmup
-steps, then matches the full-vocabulary baseline by 200 steps. With `k=4`,
-the method only becomes stable after 250 warmup steps.
+A threshold is visible, and it depends sharply on the truncation width. With `k=8`, the truncation is close to full-vocabulary and becomes nearly stable after 150 warmup steps, matching the full-vocabulary baseline by 200. With `k=4`, the same method only becomes stable after 250 warmup steps. The interesting question is what the difference between those two thresholds reflects about the underlying mechanism.
 
 ## Switch diagnostics
 
@@ -77,12 +68,7 @@ At the switch row, before the first top-k update:
 | 200 | 0.5144 | 0.4824 | 0.4069 | 4.1331 |
 | 250 | 0.2620 | 0.7318 | 0.6842 | 2.2702 |
 
-The switch diagnostics are the same for `k=4` and `k=8` because the warmup
-phase is full-vocabulary in both cases.
-
-As in the earlier top-k notes, `Overlap@4` is tie-sensitive in this oracle
-teacher because every wrong token has the same probability. It helps expose
-gross support mismatch, but it should not be used as the sole switch rule.
+The switch diagnostics are identical for `k=4` and `k=8` because the warmup phase is full-vocabulary in both cases. As in the earlier top-k notes, `Overlap@4` is tie-sensitive in this oracle teacher because every wrong token has the same probability, so it can flag gross support mismatch but should not be used as the sole switch rule.
 
 For the selected support at the switch:
 
@@ -101,11 +87,7 @@ For the selected support at the switch:
 | 8 | 200 | 0.9879 | 0.9979 |
 | 8 | 250 | 0.9972 | 0.9992 |
 
-Mass-on-support alone is not a sufficient switch criterion. At `k=4`,
-teacher mass on the student's selected support is already about 0.90 after 200
-warmup steps, but final error is still 0.61. The 250-step switch is different:
-it has both high support mass and much better behavioral alignment, with top-1
-agreement 0.73 and sampled reward 0.68.
+Mass-on-support alone is not a sufficient switch criterion. At `k=4`, teacher mass on the student's selected support is already 0.90 by 200 warmup steps, but final error is still 0.61. The 250-step switch is qualitatively different in a way mass-on-support does not capture: it pairs high support mass with much stronger behavioral alignment, with top-1 agreement 0.73 and sampled reward 0.68, and that combination is what lets the truncated objective converge.
 
 ## Post-switch change
 
@@ -126,38 +108,18 @@ Final error minus switch error:
 | 8 | 200 | -0.5122 |
 | 8 | 250 | -0.2609 |
 
-For `k=8`, switching usually continues improving the model because the support
-restriction is weak: it excludes only one action token. For `k=4`, switching
-between 50 and 200 steps degrades the model, confirming that partial warmup can
-be erased by too-early truncation.
+For `k=8`, switching continues to improve the model at every warmup length, because the support restriction is mild enough that excluding one action token is rarely consequential once any warmup has happened. For `k=4`, switching between 50 and 200 steps actively degrades the model, which is the partial-warmup-erasure pattern from the previous run, made visible across the full warmup sweep.
 
 ## Interpretation
 
-This sweep sharpens the previous two top-k results:
+The reading I take from this sweep is that top-k OPD becomes viable only after the student enters a sufficiently aligned support regime, and the required alignment threshold rises as `k` gets smaller. With `k=8` the support restriction is mild, and the threshold sits below where the model has even solved the task. With `k=4` the support restriction is severe, and the threshold rises to the point where even high teacher mass on the retained support is not enough to guarantee a useful gradient.
 
-> Top-k OPD becomes viable only after the student enters a sufficiently aligned
-> support regime, and the required alignment threshold rises as k gets smaller.
+The most useful switch diagnostics are the behavioral ones, meaning top-1 agreement and sampled reward. Overlap@4 and mass-on-support describe the geometry but they do not on their own predict stable switching. The reason is mechanical. High teacher mass on the student's selected support can coexist with the student spreading its own mass nearly uniformly across that support, and the per-action gradient on each term scales with `π_student(a)`. A flat student distribution produces small per-term updates even when the geometry looks healthy. Top-1 agreement measures the condition that actually concentrates `π_student` on the teacher's preferred token, and that concentration is what lets the truncated objective converge on the teacher rather than dilute around it.
 
-In this toy setting, `k=8` is almost full support and becomes stable well before
-the model has solved the task. `k=4` needs a much stronger warmup. The most
-useful switch diagnostics are behavioral: top-1 agreement and sampled reward.
-Overlap@4 and mass-on-support help describe the geometry, but they do not by
-themselves predict stable switching.
+This is the small-scale analog of the same-family / cold-start lesson in OPD. Top-k truncation belongs in the efficiency-and-stability toolbox once the student and teacher share a local support; it does not create that support from scratch.
 
-This is the small-scale analog of the same-family/cold-start lesson in OPD:
-top-k truncation belongs in the efficiency-and-stability toolbox once the
-student and teacher already share a local support, and it cannot be used to
-create that support from scratch.
-
-The numeric threshold is not universal. It is a property of this teacher, this
-student, this horizon, and this compute budget. The transferable part is the
-diagnostic structure: support mass, entropy, and behavior need to move together.
-High retained mass alone is not proof that the truncated objective still
-contains the useful correction.
+The numeric threshold here is not universal. It is a property of this teacher, this student, this horizon, and this compute budget. The transferable part is the diagnostic structure: support mass, entropy, and behavior have to move together, and high retained mass alone is not evidence that the truncated objective still contains the useful correction.
 
 ## Scope
 
-The numeric thresholds in this sweep belong to this teacher, student, horizon,
-and compute budget. The mechanistic claim travels: support truncation has a
-precondition, the precondition is measurable on the same diagnostics the run
-uses, and the threshold tightens as the support gets narrower.
+The numeric thresholds in this sweep belong to this teacher, student, horizon, and compute budget. The mechanistic claim travels more broadly: support truncation has a precondition, the precondition is measurable on the same diagnostics the run uses, and the threshold tightens as the retained support gets narrower.

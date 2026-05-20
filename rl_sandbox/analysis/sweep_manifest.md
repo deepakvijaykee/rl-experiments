@@ -2,9 +2,9 @@
 
 The exact commands that produced the tables in [`results_matrix.md`](results_matrix.md). Run from the repository root. The trainer picks CUDA automatically when PyTorch can see a GPU.
 
-Sweeps are intentionally small: three seeds, `batch_size=96`, short toy-task horizons. Treat them as regime checks rather than benchmark claims.
+Each sweep is intentionally small: three seeds, `batch_size=96`, short toy-task horizons. These are regime checks rather than benchmark claims, so the comparison worth reading from each table is the ordering between methods and the shape of each failure mode, not the absolute numbers.
 
-Regenerate figures after the sweeps complete:
+Regenerate the figures after the sweeps complete:
 
 ```bash
 python rl_sandbox/analysis/plot_evidence.py
@@ -35,7 +35,7 @@ python -m rl_sandbox.train --task token_reversal --method R2VPO --batch_size 96 
 
 ## Reward-chain dense correction
 
-The 1500-step runs are the evidence runs. Short 300-step probes were under-budget for exact-match `chain_reversal`.
+1500 steps is the evidence horizon. The shorter 300-step probes are under-budget for exact-match `chain_reversal`: even the supervised baseline does not finish in time, so no method has room to demonstrate dense correction at the shorter horizon.
 
 ```bash
 python -m rl_sandbox.train --task chain_reversal --method CE --batch_size 96 --num_steps 1500 --eval_every 50 --num_seeds 3 --output results/chain_ce_1500.csv
@@ -45,7 +45,7 @@ python -m rl_sandbox.train --task chain_reversal --method SCOPELite --batch_size
 
 ## Freshness-aware replay
 
-Capacity 5 at delay 4 is fixed-age stale replay. Capacity 32 is the stale-buffer stress test.
+Capacity 5 at delay 4 is the fixed-age regime, where every sample in the buffer is exactly 4 steps old. Capacity 32 is the stress test that decouples capacity from sample age, letting the age distribution spread.
 
 ```bash
 python -m rl_sandbox.train --task token_reversal --method DG --batch_size 96 --delay 4 --num_steps 300 --eval_every 20 --num_seeds 3 --output results/replay_dg_delay4.csv
