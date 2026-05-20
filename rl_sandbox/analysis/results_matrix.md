@@ -1,4 +1,4 @@
-# Results Matrix
+# Results matrix
 
 Compact GPU sweeps. Three seeds, `batch_size=96`, default token-reversal model unless noted. Treat these as regime checks. The absolute numbers move with seed and horizon; the ordering between methods and the shape of the failure modes do not. Each section below has the run command, the resulting numbers, and a short reading of what I take from them. The top-level README carries the synthesis; this document is the source data the synthesis draws from.
 
@@ -19,7 +19,7 @@ python -m rl_sandbox.train --task token_reversal --batch_size 96 \
 | `GRPO` | `--group_size 8 --inner_epochs 4` | `0.3536 +/- 0.0106` |
 | `TPO` | `--group_size 8 --inner_epochs 4` | `0.2399 +/- 0.0573` |
 
-`TPO` is the strongest in this compact run, and the gap survives the seed variance. The entropy sweep below rules out the simplest alternative explanation (faster entropy collapse), which leaves the candidate-target construction as the working hypothesis for what is doing the work. The point I draw from the table on its own is more limited: if you already pay for grouped rollouts, the target-construction step is essentially free and on this task it carries the gain over `GRPO`-style use of the same rollouts.
+`TPO` is the strongest in this compact run, and the gap survives the seed variance. The entropy sweep below rules out the simplest alternative explanation (faster entropy collapse), which leaves the candidate-target construction as the working hypothesis for why `TPO` wins here. What I take from the table on its own is more limited: if you already pay for grouped rollouts, the target-construction step adds negligible compute, and on this task it carries the gain over `GRPO`-style use of the same rollouts.
 
 ## Reward-noise robustness
 

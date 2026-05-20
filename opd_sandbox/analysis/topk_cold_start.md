@@ -1,4 +1,4 @@
-# Top-K Cold Start
+# Top-k cold start
 
 This appendix run tests the natural follow-up to the top-k stability result:
 if top-k reverse KL fails from a random cold start because support overlap is
@@ -93,7 +93,7 @@ only reached about 0.37 top-1 agreement and 0.29 sampled reward. Once the
 objective is restricted to the student's current top-k support, the missing
 teacher-preferred tokens again stop receiving reliable gradient.
 
-The important result is not merely "warmup helps a bit." It is sharper:
+The sharper claim from this run is:
 
 > A partial full-vocabulary warmup can be erased by switching too early to
 > top-k truncation.
@@ -103,16 +103,16 @@ the behavior is anchored, the top-k phase can undo the asymmetry that the warmup
 just created.
 
 This matches the mechanism suggested by the previous support-overlap run. Top-k
-OPD is not a cold-start method; it is a stability/efficiency method for a
-regime where teacher and student already share enough local support. In this
-toy setup, a 100-step warmup does not reach that regime. The widest tested
-truncation, `k=4`, is less destructive than `k=1` or `k=2`, but still not a
-faithful substitute for the full-vocabulary signal.
+OPD belongs in the toolkit as a stability or efficiency lever once teacher and
+student already share enough local support; it does not function as a
+cold-start method. In this toy setup, a 100-step warmup does not reach that
+regime. The widest tested truncation, `k=4`, is less destructive than `k=1` or
+`k=2` but still falls well short of the full-vocabulary signal.
 
 ## Scope
 
-This run does not prove that top-k OPD fails after any warmup. It only shows
-that a short partial warmup is insufficient in this cold-start toy setting.
-A natural next probe is to vary `warmup_steps` and ask whether there is a
-threshold of top-1 agreement or teacher mass-on-student-support above which
-top-k becomes stable.
+What this run shows is that 100 full-vocabulary steps is not enough warmup to
+stabilize student-top-k truncation in the cold-start toy setting. The natural
+follow-up is to sweep `warmup_steps` and look for a threshold (on top-1
+agreement, or on teacher mass over the student's selected support) above which
+top-k becomes stable. That sweep is the next run in the appendix.

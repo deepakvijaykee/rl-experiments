@@ -1,6 +1,6 @@
-# Implementation Scope
+# Implementation scope
 
-These methods are scoped to fit the local task and batch contract in this sandbox. They are not full reproductions of distributed post-training systems. Where the local contract would silently change a method's meaning (for example, normalizing rewards in a regime where the paper assumes a critic), the trainer rejects the config rather than running a misleading variant.
+Each method here is the toy-sized version of the published method, scoped to fit the local task and batch contract this sandbox provides. The scoped versions keep the load-bearing parts (the update rule, the credit-assignment scheme, the normalization choices) and drop the distributed-system parts the toy setup does not need. Where scoping would silently change a method's meaning, for example normalizing rewards in a regime where the paper assumes a critic, the trainer rejects the config rather than running a misleading variant. The table records, per method, what stays in and where the scope departs from the published version.
 
 | Method family | Scope here |
 | --- | --- |

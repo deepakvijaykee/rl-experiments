@@ -31,16 +31,16 @@ Reproduction commands and result tables live in [`analysis/sweep_manifest.md`](a
 
 Grouped by what each family is testing rather than by paper. Implementations are scoped to the local batch and task contract; see [`analysis/implementation_scope.md`](analysis/implementation_scope.md) for what each scoped version does and does not include.
 
-| Family | Methods | What it is testing |
+| Family | Methods | The question it asks |
 | --- | --- | --- |
-| Reference baselines | `CE`, `REINFORCE`, `PG`, `TrajPG` | Sanity floor: where does supervised CE or vanilla PG land? |
-| RLVR baselines | `GRPO`, `DrGRPO`, `DAPOLite` | Group-relative rewards, clipped surrogates, DAPO-style filtering and aggregation. |
-| Candidate-target | `TPO`, `TPONoAnchor`, `GroupPG`, `TPOFullAction`, `TPOToken`, `GRPOToken` | Local candidate-simplex objectives at the sequence, full-action, or per-token level. |
-| Influence (delight) | `DG`, `Kondo`, `DGToken` | The `advantage * surprisal` family, plus compute-aware screening and token-level credit. |
-| Credit and geometry | `TEMPO`, `MaxRL`, `LogGrowth`, `PMDMean` | Prefix-tree credit, grouped mean normalization, and alternate objective shapes. |
-| Replay and freshness | `ReplayDG`, `FreshDG` | DG composed with a replay buffer and explicit age weighting. |
-| Robustness diagnostics | `DGEntropyGuard`, `UncertaintyDG`, `FilteredDG`, `RewardVarianceDG`, `R2VPO`, `ASPO` | Entropy-collapse guards and reward-noise filters under controlled stress tests. |
-| Dense-correction toys | `SelfDistillDG`, `SCOPELite` | Oracle-label bridges from sparse reward to token-level supervision. |
+| Reference baselines | `CE`, `REINFORCE`, `PG`, `TrajPG` | Sanity floor. Where does supervised CE or vanilla PG land without any cleverness? |
+| RLVR baselines | `GRPO`, `DrGRPO`, `DAPOLite` | Do group normalization and PPO-style clipping change which samples carry weight in the update? |
+| Candidate-target | `TPO`, `TPONoAnchor`, `GroupPG`, `TPOFullAction`, `TPOToken`, `GRPOToken` | What changes when the update target is built from the whole rollout group rather than from the one sampled action? |
+| Influence (delight) | `DG`, `Kondo`, `DGToken` | Does `advantage * surprisal` weighting produce a structurally different update from advantage alone? |
+| Credit and geometry | `TEMPO`, `MaxRL`, `LogGrowth`, `PMDMean` | Do alternative credit-assignment and normalization geometries behave differently from ordinary PG? |
+| Replay and freshness | `ReplayDG`, `FreshDG` | Can replay reduce gradient variance without paying for it in staleness? |
+| Robustness diagnostics | `DGEntropyGuard`, `UncertaintyDG`, `FilteredDG`, `RewardVarianceDG`, `R2VPO`, `ASPO` | Do noise-robust heuristics filter wrong signal without also filtering right signal? |
+| Dense-correction toys | `SelfDistillDG`, `SCOPELite` | Can sparse reward bootstrap dense token supervision through oracle labels? |
 
 ## Tasks
 

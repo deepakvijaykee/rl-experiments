@@ -1,13 +1,16 @@
-# Top-K Stability
+# Top-k stability
 
 This appendix run is a support-overlap stress test. It compares exact
 full-vocabulary reverse KL, sampled-token OPD, and student-top-k truncated
 reverse KL from the same cold-start toy transformer.
 
-This is intentionally a harsh regime for top-k OPD: random student, no SFT
-alignment, no same-family teacher, and a smoothed oracle distribution. It is a
-worst-case read of support restriction, not a claim that top-k is intrinsically
-flawed.
+The question I want answered: what happens to support truncation when the
+student has no structural reason yet to share support with the teacher? That
+regime is where the overlap assumption most plausibly fails, and where the
+support-restriction trick most plausibly breaks. The cold start (random
+student, no SFT alignment, no same-family teacher, smoothed oracle
+distribution) is the setup that puts that question to the experiment most
+directly.
 
 The top-k variant implemented here is intentionally literal:
 
@@ -100,9 +103,7 @@ student-selected support, it cannot reliably pull probability toward omitted
 teacher-preferred tokens. Increasing `k` from 1 to 4 increases teacher mass on
 the selected support, but not enough to enter the successful regime.
 
-The failure is not mode collapse. It is lack of directional asymmetry. The
-objective can become easy to reduce while still failing to create the local
-teacher-student agreement that the task requires.
+What is missing here is directional asymmetry, not mode-collapsed probability mass. The objective can become easy to reduce while still failing to create the local teacher-student agreement that the task requires.
 
 This is the small-scale analog of the OPD overlap caveat: top-k OPD is a
 stability tool only when the student and teacher already share enough local
@@ -112,12 +113,9 @@ start, top-k truncation can remove the very signal needed to create overlap.
 
 ## Scope
 
-This result supports a narrow claim:
-
-> Student-top-k truncation is not a reliable cold-start objective when teacher
-> mass is not already concentrated inside the student's selected support.
-
-It does not claim that top-k OPD is intrinsically flawed in the aligned regime
-described in the OPD literature. This sandbox run intentionally starts from a
-random tiny model, so it is a stress test for the support-overlap assumption
-rather than a reproduction of same-family large-model OPD.
+The transferable claim is that student-top-k truncation becomes unreliable as
+a cold-start objective when teacher mass is not already concentrated in the
+student's selected support. The cold-start setup is what makes the run a
+stress test of the support-overlap assumption. The aligned same-family LLM
+setups the OPD literature usually describes start from a different regime,
+where the overlap is given and the question moves on to efficiency.

@@ -1,9 +1,6 @@
 # rl-experiments
 
-A small PyTorch sandbox for analyzing RL update rules in toy settings. A second flow, [`rlm_grpo/`](rlm_grpo/), trains small causal LMs with GRPO and recursive, tree-of-rollouts sampling.
-
-The OPD appendix lives separately in [`opd_sandbox/`](opd_sandbox/) so
-distillation-specific experiments do not blur the reward-update sandbox.
+A small PyTorch sandbox for analyzing RL update rules in toy settings. Two companion packages sit alongside it: [`rlm_grpo/`](rlm_grpo/) trains small causal LMs with GRPO and recursive, tree-of-rollouts sampling, and [`opd_sandbox/`](opd_sandbox/) probes on-policy distillation mechanics on similar toy tasks.
 
 The practical question: when feedback is sparse, noisy, or delayed, which samples should receive gradient credit?
 
@@ -17,7 +14,7 @@ Most post-training RL papers organize themselves by objective family: PPO, GRPO,
 
 It breaks into five axes, each of which is a failure mode the sandbox can reproduce cheaply.
 
-1. **Influence allocation.** Should every sample contribute uniformly, or should the update weight by advantage, surprisal, or some product of the two? `DG`-style delight (`advantage * surprisal`) is one bet. GRPO's group-normalized advantage is another. Plain REINFORCE is the null hypothesis.
+1. **Influence allocation.** Should every sample contribute uniformly, or should the update weight by advantage, surprisal, or some product of the two? `DG`-style delight (`advantage * surprisal`) is one bet. GRPO's group-normalized advantage is another. `TPO` sits one level below the weighting question: it changes what the update target is, while the rest all weight contributions to a sample-driven update. Plain REINFORCE is the null hypothesis.
 2. **Credit granularity.** Trajectory, branch, or token. Sparse-reward tasks need a credit story even when the feedback is one bit. Dense-reward tasks waste signal if you flatten everything back to a sequence score. `TPOToken` and `DGToken` are the per-token bets here.
 3. **Support and coverage.** When is logged data still informative? Old rollouts have stale importance ratios. Bigger replay buffers reduce variance, but only inside a freshness window. Outside that window you are training against a different policy. `ReplayDG` and `FreshDG` are the diagnostics.
 4. **Reward uncertainty.** When does a rare high reward signal a breakthrough versus a proxy mistake? Filtering, uncertainty heuristics, and reward-variance penalties all try to answer this. They fail differently: wrong proxy granularity, premature entropy collapse, or just too slow. `UncertaintyDG`, `FilteredDG`, `RewardVarianceDG`, `ASPO`, and `R2VPO` cover the spectrum from conservative gating to ratio-variance regularization.
@@ -28,7 +25,7 @@ Each method in the sandbox makes a different bet on one or two of these axes. Th
 ## What is in here
 
 - [`rl_sandbox/`](rl_sandbox/) is the toy sandbox: bandit and sequence tasks, plus a method registry covering PG, GRPO, DG, TPO, and the smaller families that test specific axes (entropy guards, reward-noise filters, token credit, dense correction). See its [README](rl_sandbox/README.md) for the full method and task menu.
-- [`opd_sandbox/`](opd_sandbox/) is the OPD appendix sandbox: exact reverse-KL and sampled-token OPD on student-sampled toy prefixes with a smoothed oracle teacher.
+- [`opd_sandbox/`](opd_sandbox/) is the OPD appendix: estimator variance, top-k support truncation, warmup schedules, and teacher-entropy effects on on-policy distillation. See its [README](opd_sandbox/README.md) for the appendix experiments and what each isolates.
 - [`rlm_grpo/`](rlm_grpo/) is the LM-scale flow. See its [README](rlm_grpo/README.md) for the training contract (root and child rollouts, reward propagation, child-count normalization) and CLI options.
 - [`rl_sandbox/analysis/`](rl_sandbox/analysis/) is the evidence: reproduction commands, result tables, and figures from compact three-seed runs.
 
@@ -72,6 +69,8 @@ I run three seeds per cell, small batches, short horizons. I treat these as regi
 
 - `GRPO` collapses entropy fastest in this sweep, and I think I see why. Group-normalized advantages standardize rewards within each rollout group. When the rollouts in a group are mostly similar (which is most of the time on an easy task), the standardization amplifies small per-rollout differences into large advantages. The policy concentrates on whichever rollout happened to win, exploration shrinks, and entropy is gone inside 300 steps. The non-obvious part is where any fix has to live. The PPO heritage in `GRPO` puts a clip on the policy ratio, but the clip sits downstream of the standardization, so it does not constrain the amplification at all. What I now think is that `GRPO`'s entropy-collapse pathology is a normalization problem dressed up as a clipping problem. That would predict why recent variants such as `DrGRPO` and `DAPO` get traction by attacking the normalization side (removing reward-std normalization, decoupling clipping ranges) rather than tightening the clip further. If I were going to fix `GRPO` for entropy collapse, the clip is not where I would start.
 
+Two predictions the toy runs make that the next scale up would confirm or break. First, that `TPO`'s information-per-step advantage holds against stronger base policies and richer rewards, where group rollouts cost more and how you use each rollout matters more. Second, that attacking the normalization side of `GRPO` (rather than the clip) is where the entropy-collapse fix lives. The first I would test against a same-task TPO-vs-GRPO comparison with a 1B-class base. The second I would test by ablating reward-std normalization alone (the `DrGRPO` arm) and seeing whether entropy decay slows even with the original PPO clip in place.
+
 ## Evidence plots
 
 Mean and standard error across three seeds. Full trajectories rather than only final bars, so stalls and collapses are visible.
@@ -92,7 +91,7 @@ Full numbers live in [`rl_sandbox/analysis/results_matrix.md`](rl_sandbox/analys
 
 ## Scope
 
-Single machine. CUDA when available, CPU otherwise. The sandbox does not include distributed rollout, a learned critic, or a production reward pipeline. Method implementations are scoped to the local batch and task contract: the goal is to inspect the update rule itself, on a setup small enough that the gradient and entropy signals are readable. Where scoping the method would silently change its meaning (for example, normalizing rewards in a regime where the paper assumes a critic), the trainer rejects the config rather than running a misleading variant.
+Single machine. CUDA when available, CPU otherwise. Method implementations are scoped to the local batch and task contract: the update rule is the object of inspection, on a setup small enough that the gradient and entropy signals stay readable. Where scoping would silently change a method's meaning (for example, normalizing rewards in a regime where the paper assumes a critic), the trainer rejects the config rather than running a misleading variant. Distributed rollout, learned critics, and production reward pipelines are out of scope by design; they cost the observability the sandbox is built around.
 
 ## Verification
 

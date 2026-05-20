@@ -1,4 +1,4 @@
-# Soft-Teacher Top-K Support
+# Soft-teacher top-k support
 
 The earlier top-k runs used a smoothed one-hot teacher. That made the support
 failure easy to see, but it also made `Overlap@4` tie-sensitive because every
@@ -11,10 +11,9 @@ truncation finding survives a less artificial teacher:
 
 A softer teacher is not automatically a better teacher for this exact-token
 metric. It trades a sharper correctness signal for broader support. That
-tradeoff is exactly what the experiment is meant to expose.
+tradeoff is what this experiment exposes.
 
-The main comparison is not just top-k versus full-vocabulary. It is the support
-used by the top-k truncation:
+The comparison this run sets up is between three support choices for the top-k truncation, beyond the simpler full-vocabulary versus top-k contrast:
 
 - `student`: use the student's current top-k tokens.
 - `teacher`: use the teacher's current top-k tokens.
@@ -55,12 +54,12 @@ Outputs:
 - `opd_sandbox/analysis/results/soft_teacher_topk_temp05/soft_teacher_topk.csv`
 - `opd_sandbox/analysis/results/soft_teacher_topk_temp05/soft_teacher_topk.png`
 
-## Final Result: Broad Soft Teacher
+## Final result: broad soft teacher
 
 With `teacher_temperature=1.0`, even full-vocabulary reverse KL does not solve
-the exact-token reversal task in 300 steps. This is already an important
-control: an argmax-correct teacher can still be too diffuse for the exact
-reward metric at a fixed compute budget.
+the exact-token reversal task in 300 steps. The baseline itself is informative:
+an argmax-correct teacher can still be too diffuse for the exact reward metric
+at a fixed compute budget.
 
 | Support | Warmup steps | Final test error | Final entropy |
 | --- | ---: | ---: | ---: |
@@ -85,7 +84,7 @@ weights the gradient by the student's probability mass. A token can be in the
 teacher top-k and still produce a weak update if the student currently assigns
 it little probability.
 
-## Final Result: Sharper Soft Teacher
+## Final result: sharper soft teacher
 
 With `teacher_temperature=0.5`, full-vocabulary RKL improves substantially and
 the support-choice story becomes more informative:
@@ -116,7 +115,7 @@ truncated variants.
 None of the `k=4` variants catches full-vocabulary RKL in this setting. The
 support restriction is still too severe for this task and horizon.
 
-## Switch Diagnostics
+## Switch diagnostics
 
 The switch rows make clear why high teacher mass on the selected support is not
 enough.
@@ -175,13 +174,14 @@ teacher, and intersection support each fail for different reasons when the
 teacher entropy, student mass, or behavioral alignment precondition is missing.
 
 This is closer to the large-model OPD story than the hard-oracle result alone.
-Same-family/cold-start recipes work not merely because overlap is high, but
-because the teacher is sharp and locally meaningful on the student's support.
+Same-family/cold-start recipes work because the teacher is sharp and locally
+meaningful on the student's support, beyond the simpler claim that overlap is
+high.
 
 ## Scope
 
-This remains a toy oracle-teacher experiment. It does not claim that
-`teacher`, `student`, or `intersection` support is globally preferable for LLM
-OPD. It does show why a single overlap or mass-on-support diagnostic is too
-shallow: top-k support is an interaction between teacher entropy, student mass,
-and behavioral alignment.
+These runs do not name a globally preferable top-k support for LLM OPD. They
+show why a single overlap or mass-on-support number cannot pick one: support
+choice is an interaction between teacher entropy, student mass on that
+support, and behavioral alignment. Naming a winner requires measuring all
+three together.

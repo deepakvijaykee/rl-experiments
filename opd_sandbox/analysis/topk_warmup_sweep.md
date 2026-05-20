@@ -1,16 +1,17 @@
-# Top-K Warmup Sweep
+# Top-k warmup sweep
 
 This appendix run asks whether there is a measurable switch threshold for
 top-k OPD. The previous cold-start run showed that switching after 100
 full-vocabulary steps was too early. Here we sweep the warmup length and test
 two truncation widths:
 
-- `k=4`, a genuinely narrow support restriction over 9 action tokens.
-- `k=8`, almost full support over 9 action tokens.
+- `k=4`, covering less than half the action space.
+- `k=8`, covering all but one action token.
 
-Those two values ask different questions. `k=8` excludes only one action token,
-so it is a mild regularizer. `k=4` is a real bottleneck. Treating both as
-"top-k" without this distinction would hide the mechanism.
+Those two values ask different questions. `k=8` is a mild regularizer over the
+nine-token vocabulary. `k=4` cuts the policy down to roughly half its action
+space, which is a different kind of intervention. Treating both as "top-k"
+without this distinction would hide the mechanism.
 
 ## Command
 
@@ -38,7 +39,7 @@ Outputs:
 
 The evidence run completed in about 238 seconds on the local machine.
 
-## Final Result
+## Final result
 
 Final greedy test error at step 300:
 
@@ -63,7 +64,7 @@ top-k is nearly full-vocabulary and becomes close to stable after 150 warmup
 steps, then matches the full-vocabulary baseline by 200 steps. With `k=4`,
 the method only becomes stable after 250 warmup steps.
 
-## Switch Diagnostics
+## Switch diagnostics
 
 At the switch row, before the first top-k update:
 
@@ -83,7 +84,7 @@ As in the earlier top-k notes, `Overlap@4` is tie-sensitive in this oracle
 teacher because every wrong token has the same probability. It helps expose
 gross support mismatch, but it should not be used as the sole switch rule.
 
-For the actual selected support at the switch:
+For the selected support at the switch:
 
 | Top-k | Warmup steps | Student top-k mass | Teacher mass on student top-k |
 | ---: | ---: | ---: | ---: |
@@ -106,7 +107,7 @@ warmup steps, but final error is still 0.61. The 250-step switch is different:
 it has both high support mass and much better behavioral alignment, with top-1
 agreement 0.73 and sampled reward 0.68.
 
-## Post-Switch Change
+## Post-switch change
 
 Final error minus switch error:
 
@@ -144,9 +145,9 @@ Overlap@4 and mass-on-support help describe the geometry, but they do not by
 themselves predict stable switching.
 
 This is the small-scale analog of the same-family/cold-start lesson in OPD:
-top-k truncation is an efficiency or stability device after the student and
-teacher have entered a shared local support. It is not a reliable way to create
-that support from scratch.
+top-k truncation belongs in the efficiency-and-stability toolbox once the
+student and teacher already share a local support, and it cannot be used to
+create that support from scratch.
 
 The numeric threshold is not universal. It is a property of this teacher, this
 student, this horizon, and this compute budget. The transferable part is the
@@ -156,7 +157,7 @@ contains the useful correction.
 
 ## Scope
 
-This is still a toy oracle-teacher result. It does not reproduce top-k OPD in
-large LLMs and does not imply that the numerical thresholds transfer. The
-transferable claim is mechanistic: support truncation has a precondition, and
-the precondition is measurable.
+The numeric thresholds in this sweep belong to this teacher, student, horizon,
+and compute budget. The mechanistic claim travels: support truncation has a
+precondition, the precondition is measurable on the same diagnostics the run
+uses, and the threshold tightens as the support gets narrower.

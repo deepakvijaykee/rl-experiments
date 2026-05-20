@@ -1,4 +1,4 @@
-# Evidence Sweep Manifest
+# Evidence sweep manifest
 
 The exact commands that produced the tables in [`results_matrix.md`](results_matrix.md). Run from the repository root. The trainer picks CUDA automatically when PyTorch can see a GPU.
 
