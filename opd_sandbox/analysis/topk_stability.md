@@ -42,21 +42,21 @@ Final greedy evaluation at step 300:
 
 | Variant | Test error | Entropy |
 | --- | ---: | ---: |
-| `full_vocab_rkl` | 0.0045 +/- 0.0069 | 0.0868 +/- 0.0494 |
-| `sampled_pg` | 0.6350 +/- 0.0057 | 1.6018 +/- 0.0297 |
-| `topk_rkl_k1` | 0.8619 +/- 0.0065 | 2.1971 +/- 0.0000 |
-| `topk_rkl_k2` | 0.8538 +/- 0.0051 | 2.1972 +/- 0.0000 |
-| `topk_rkl_k4` | 0.8491 +/- 0.0367 | 2.1972 +/- 0.0000 |
+| `full_vocab_rkl` | 0.0045 ± 0.0069 | 0.0868 ± 0.0494 |
+| `sampled_pg` | 0.6350 ± 0.0057 | 1.6018 ± 0.0297 |
+| `topk_rkl_k1` | 0.8619 ± 0.0065 | 2.1971 ± 0.0000 |
+| `topk_rkl_k2` | 0.8538 ± 0.0051 | 2.1972 ± 0.0000 |
+| `topk_rkl_k4` | 0.8491 ± 0.0367 | 2.1972 ± 0.0000 |
 
 Last logged OPD diagnostics at step 280:
 
 | Variant | Reverse KL | Top-1 agreement | Overlap@4 | Reward |
 | --- | ---: | ---: | ---: | ---: |
-| `full_vocab_rkl` | 0.7436 +/- 0.6037 | 0.9212 +/- 0.0684 | 0.5301 +/- 0.0270 | 0.8939 +/- 0.0835 |
-| `sampled_pg` | 4.9129 +/- 0.0184 | 0.3613 +/- 0.0170 | 0.4899 +/- 0.0398 | 0.2578 +/- 0.0167 |
-| `topk_rkl_k1` | 5.7917 +/- 0.0010 | 0.1419 +/- 0.0285 | 0.3913 +/- 0.0020 | 0.1087 +/- 0.0141 |
-| `topk_rkl_k2` | 5.7913 +/- 0.0007 | 0.1276 +/- 0.0439 | 0.4365 +/- 0.1227 | 0.1087 +/- 0.0141 |
-| `topk_rkl_k4` | 5.7902 +/- 0.0005 | 0.1517 +/- 0.0130 | 0.5145 +/- 0.0384 | 0.1074 +/- 0.0137 |
+| `full_vocab_rkl` | 0.7436 ± 0.6037 | 0.9212 ± 0.0684 | 0.5301 ± 0.0270 | 0.8939 ± 0.0835 |
+| `sampled_pg` | 4.9129 ± 0.0184 | 0.3613 ± 0.0170 | 0.4899 ± 0.0398 | 0.2578 ± 0.0167 |
+| `topk_rkl_k1` | 5.7917 ± 0.0010 | 0.1419 ± 0.0285 | 0.3913 ± 0.0020 | 0.1087 ± 0.0141 |
+| `topk_rkl_k2` | 5.7913 ± 0.0007 | 0.1276 ± 0.0439 | 0.4365 ± 0.1227 | 0.1087 ± 0.0141 |
+| `topk_rkl_k4` | 5.7902 ± 0.0005 | 0.1517 ± 0.0130 | 0.5145 ± 0.0384 | 0.1074 ± 0.0137 |
 
 `Overlap@4` is useful only as a rough support diagnostic in this toy. The oracle teacher has one high-probability target token and a uniform tail over wrong tokens, which makes the teacher's non-target top-k entries depend partly on tie-breaking. Top-1 agreement, sampled reward, and teacher mass on the student's selected support carry the cleaner signal.
 
@@ -64,9 +64,9 @@ For the top-k variants, the selected support at step 280 has:
 
 | Variant | Student top-k mass | Teacher mass on student top-k |
 | --- | ---: | ---: |
-| `topk_rkl_k1` | 0.1130 +/- 0.0003 | 0.1419 +/- 0.0284 |
-| `topk_rkl_k2` | 0.2242 +/- 0.0002 | 0.2552 +/- 0.0517 |
-| `topk_rkl_k4` | 0.4469 +/- 0.0002 | 0.5299 +/- 0.0417 |
+| `topk_rkl_k1` | 0.1130 ± 0.0003 | 0.1419 ± 0.0284 |
+| `topk_rkl_k2` | 0.2242 ± 0.0002 | 0.2552 ± 0.0517 |
+| `topk_rkl_k4` | 0.4469 ± 0.0002 | 0.5299 ± 0.0417 |
 
 The entropy value `2.197` is approximately `log(9)`, the uniform entropy over the task's nine action tokens. The top-k runs therefore do not collapse to a wrong sharp mode. They fail by staying nearly uniform and never acquiring the teacher's target-token support in the first place.
 
