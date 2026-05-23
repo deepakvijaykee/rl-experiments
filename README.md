@@ -1,16 +1,16 @@
 # rl-experiments
 
-Three connected pieces of code for studying what RL update rules actually do to a policy. The base is [`rl_sandbox/`](rl_sandbox/), a small PyTorch sandbox of bandit and sequence tasks with a registry of update rules to compare on them. Next to it sit two companions. [`rlm_grpo/`](rlm_grpo/) trains small causal LMs (0.5–0.6B) with GRPO on a tree-of-rollouts protocol. [`opd_sandbox/`](opd_sandbox/) is an appendix that probes on-policy distillation mechanics on similar toy tasks.
+Four connected pieces of code for studying what RL update rules actually do to a policy. The base is [`rl_sandbox/`](rl_sandbox/), a small PyTorch sandbox of bandit and sequence tasks with a registry of update rules to compare on them. Next to it sit three companions. [`rlm_grpo/`](rlm_grpo/) trains small causal LMs (0.5–0.6B) with GRPO on a tree-of-rollouts protocol. [`opd_sandbox/`](opd_sandbox/) is an appendix that probes on-policy distillation mechanics on similar toy tasks. [`vpo_sandbox/`](vpo_sandbox/) isolates Vector Policy Optimization on a set-valued, vector-reward toy where the question is whether training should preserve a pool of trade-offs for test-time search.
 
-All three pieces exist because the same practical question turned out to matter more than the choice of objective family. When the reward signal is sparse, noisy, or delayed, which rollouts deserve gradient credit, and at what granularity? Benchmarks rank methods by who finished first. They cannot tell you why one method got there and another stalled, and they cannot tell you whether the winner at small scale will still win at a larger one. What I wanted was the en-route picture: where gradient mass concentrates as the policy moves, when the importance ratio drifts past the band the clipped surrogate is still tracking, at what step entropy collapses past recovery. Those signals are the cost of scaling up. They become invisible the moment you go to distributed rollouts and large batches, and that invisibility makes the modern RL pipeline's failure modes so expensive to diagnose. Running on one GPU with toy models and short horizons brings them back. The rest of this setup is built around keeping them visible.
+All four pieces exist because the same practical question turned out to matter more than the choice of objective family. When the reward signal is sparse, noisy, delayed, or vector-valued, which rollouts deserve gradient credit, and at what granularity should a policy spend its update budget? Benchmarks rank methods by who finished first. They cannot tell you why one method got there and another stalled, and they cannot tell you whether the winner at small scale will still win at a larger one. What I wanted was the en-route picture: where gradient mass concentrates as the policy moves, when the importance ratio drifts past the band the clipped surrogate is still tracking, at what step entropy collapses past recovery, and when a policy has collapsed a useful candidate pool into one scalar compromise. Those signals are the cost of scaling up. They become invisible the moment you go to distributed rollouts and large batches, and that invisibility makes the modern RL pipeline's failure modes so expensive to diagnose. Running on one GPU with toy models and short horizons brings them back. The rest of this setup is built around keeping them visible.
 
 ## How I think about the space of choices
 
 Post-training RL papers usually organize themselves by objective family: PPO, GRPO, DPO, RLVR, rejection sampling, distillation. After spending enough time reading them, that framing started to feel too coarse for the decisions I actually had to make. Two methods inside the same family can disagree about the choice that determines the run, and two methods from very different lineages can agree on it. The framing that has been more useful to me sits a level below the objective.
 
-> Given a fixed budget of online rollouts, learner updates, and KL distance from the reference policy, which samples should receive gradient weight, and at what granularity?
+> Given a fixed budget of online rollouts, learner updates, and KL distance from the reference policy, which samples should receive gradient weight, at what granularity, and for what downstream use of the candidate pool?
 
-The question splits into five axes. The order is not arbitrary. The first two are about how to use the reward signal you collected. The third is about when that signal is still relevant to the current policy. The fourth is about when the reward function itself is trustworthy. The fifth is about the optimizer's response to the choices upstream. Each axis is also a failure mode the sandbox can reproduce cheaply, which means each one is a place I can stare at the gradient when it goes wrong.
+The question splits into six axes. The order is not arbitrary. The first two are about how to use the reward signal you collected. The third is about when that signal is still relevant to the current policy. The fourth is about when the reward function itself is trustworthy. The fifth is about the optimizer's response to the choices upstream. The sixth is about whether training should produce one answer or a searchable set of alternatives. Each axis is also a failure mode the sandbox can reproduce cheaply, which means each one is a place I can stare at the gradient when it goes wrong.
 
 The first axis is **influence allocation**. Every rollout arrives with an advantage, a surprisal, and a sampled action. How those three signals become a per-sample weight in the update produces structurally different gradients, not rescalings of the same direction. Uniform weighting anchors the axis as the no-effect baseline. Advantage-only weighting is the standard policy-gradient choice. The `advantage * surprisal` weighting that the delight family uses (DG, Kondo) is a third bet, and on noisy tasks the surprisal factor acts as a soft confidence weight that ordinary policy gradient does not have. GRPO sits inside the same axis despite the different vocabulary, because its group-normalized advantage is itself just a different choice of weighting. TPO is the one method that escapes the axis. It does not reweight a sample-driven update at all. It changes what the update target is, treating the rollouts in a group as candidates for a soft target distribution rather than as one sampled action and seven noise reducers. The right comparison for TPO, in this framing, is not "does its weighting beat GRPO's?" but "does its candidate-target construction extract more from the same grouped rollouts than GRPO's normalization step does?".
 
@@ -22,13 +22,16 @@ The fourth axis is **reward uncertainty**, which becomes load-bearing whenever t
 
 The fifth axis is **optimization geometry**: clipping, ratio variance, normalization, KL terms, entropy penalties, and the way these interact. The wrong combination can collapse entropy inside a hundred steps even while the loss curve looks healthy, which is exactly the kind of failure a distributed pipeline tends to discover only after several days of compute have been spent. The entropy-collapse sweep is the cheapest possible setting in which to watch it happen, and it points clearly at where in the GRPO recipe the collapse is coming from.
 
-Each method in the sandbox makes a bet on one or two of these axes. The repo is built so I can compare those bets on tasks small enough to inspect the gradient directly. That tilts the methodological discussion away from "which method scored highest" and toward "which axis of disagreement does this comparison actually exercise?".
+The sixth axis is **search coverage under vector rewards**. VPO sits here. It starts from a different deployment assumption: if test-time search will choose among many candidates, then post-training should not always collapse probability mass onto the single best scalarized answer. When reward decomposes into components, the useful object is a candidate set that covers several reward trade-offs. That changes the rollout contract itself. A VPO rollout contains multiple candidates, each candidate has a reward vector, and the group advantage comes from a set-level score computed over sampled scalarizations. That is why VPO lives in `vpo_sandbox/` instead of the scalar `rl_sandbox/` method registry.
+
+Each method or companion sandbox makes a bet on one or two of these axes. The repo is built so I can compare those bets on tasks small enough to inspect the gradient directly. That tilts the methodological discussion away from "which method scored highest" and toward "which axis of disagreement does this comparison actually exercise?".
 
 ## What is in here
 
 - [`rl_sandbox/`](rl_sandbox/) is the toy sandbox itself, with bandit and sequence tasks and a registry of update rules covering PG, GRPO, DG, TPO, and the smaller families that each probe one axis at a time. Its [README](rl_sandbox/README.md) lays out the method-family menu, the task list, and the experiment matrix I work from when deciding what to run next.
 - [`opd_sandbox/`](opd_sandbox/) is the on-policy distillation appendix. It isolates estimator variance, support truncation, warmup schedules, and teacher-entropy effects on a smaller toy task where each design knob can be moved one at a time. Its [README](opd_sandbox/README.md) walks the five appendix experiments and what each one isolates.
 - [`rlm_grpo/`](rlm_grpo/) is the one piece that scales beyond a toy: a standalone flow for training small causal LMs (0.5–0.6B) with GRPO under a recursive tree-of-rollouts sampling protocol. The design problem worth solving there is how the root reward should propagate through a tree whose shape the model itself decides at rollout time. Its [README](rlm_grpo/README.md) covers the credit-propagation rule and its rationale.
+- [`vpo_sandbox/`](vpo_sandbox/) is the vector-reward companion. It keeps VPO separate because set-valued rollouts and reward vectors are a different batch contract, not a scalar loss toggle. Its [README](vpo_sandbox/README.md) covers the scoped VPO estimator, the scalar baselines, and the best@k/diversity metrics.
 - [`rl_sandbox/analysis/`](rl_sandbox/analysis/) is the evidence: reproduction commands, result tables, and the figures the README embeds, all reproducible end to end on a single GPU.
 
 ## Run this first
@@ -38,6 +41,10 @@ pip install -e .
 
 python -m rl_sandbox.train --task token_reversal --method TPO \
   --batch_size 96 --group_size 8 --inner_epochs 4 \
+  --num_steps 300 --eval_every 20 --num_seeds 3
+
+python -m vpo_sandbox.train --method VPOGRPO \
+  --batch_size 128 --group_size 8 --num_candidates 3 \
   --num_steps 300 --eval_every 20 --num_seeds 3
 ```
 
@@ -53,7 +60,7 @@ The reward-noise, replay, partial-credit, dense-correction, and entropy sweeps l
 
 ## Inferences from these runs
 
-Five inferences I take from these methods after running them through compact three-seed sweeps. The runs are short and the batches are small, so I read the absolute numbers as regime checks rather than benchmark claims. The orderings between methods and the qualitative shape of each failure mode have been stable across the seed-to-seed variance and across small changes in horizon, which is the part I trust enough to draw mechanism from. The headlines below state each inference and the mechanism I think drives it. The sections after the headlines walk through the evidence and the prediction the toy makes about how each result would shift at scale.
+Five inferences I take from the scalar sandbox methods after running them through compact three-seed sweeps. The VPO sandbox is a newer vector-reward slice and is documented as a contract first, not folded into these scalar result claims yet. The runs below are short and the batches are small, so I read the absolute numbers as regime checks rather than benchmark claims. The orderings between methods and the qualitative shape of each failure mode have been stable across the seed-to-seed variance and across small changes in horizon, which is the part I trust enough to draw mechanism from. The headlines below state each inference and the mechanism I think drives it. The sections after the headlines walk through the evidence and the prediction the toy makes about how each result would shift at scale.
 
 The inferences map cleanly onto the axes from the previous section. TPO versus GRPO is influence allocation. Replay is support and coverage. Token-level credit is credit granularity. Reward-noise heuristics is reward uncertainty. GRPO entropy collapse is optimization geometry. Reading them as five points on the same map of design choices, rather than as five independent findings, is the framing I have come to find most useful.
 
@@ -137,13 +144,17 @@ The full numbers live in [`rl_sandbox/analysis/results_matrix.md`](rl_sandbox/an
 
 ## Scope
 
-The sandbox runs on a single machine, with CUDA when a GPU is available and CPU otherwise. The methods themselves are scoped to the local batch and task contract. I keep the part of each published method that decides the update, meaning the update rule, the credit-assignment scheme, and the normalization choices, and drop the distributed-system scaffolding that the toy setup does not need. Where the scoping would change a method's meaning rather than only its scale, for instance running advantage normalization in a regime where the original paper assumes a critic, the trainer rejects the config rather than running a variant that would be misleading to compare. Distributed rollout, learned critics, and production reward pipelines are out of scope by design. They cost the observability the sandbox is built around, and observability is the part that the small scale buys.
+The sandboxes run on a single machine, with CUDA when a GPU is available and CPU otherwise. The methods themselves are scoped to their local batch and task contracts. I keep the part of each published method that decides the update, meaning the update rule, the credit-assignment scheme, and the normalization choices, and drop the distributed-system scaffolding that the toy setup does not need. Where the scoping would change a method's meaning rather than only its scale, for instance running advantage normalization in a regime where the original paper assumes a critic, the trainer rejects the config rather than running a variant that would be misleading to compare. VPO follows the same rule: the local implementation is faithful to the set-reward estimator and explicit about not reproducing the paper's large LM domains. Distributed rollout, learned critics, and production reward pipelines are out of scope by design. They cost the observability the sandbox is built around, and observability is the part that the small scale buys.
 
 ## Verification
 
 ```bash
 python -m compileall -q rl_sandbox
+python -m compileall -q vpo_sandbox
 python -m rl_sandbox.train --task token_reversal --method DG \
   --batch_size 16 --num_steps 2 --eval_every 1 --num_seeds 1 \
   --output /tmp/rl_sandbox_smoke.csv --verbose false
+python -m vpo_sandbox.train --num_steps 2 --eval_every 1 --num_seeds 1 \
+  --batch_size 8 --group_size 4 --inner_epochs 1 \
+  --output /tmp/vpo_sandbox_smoke.csv --verbose false
 ```

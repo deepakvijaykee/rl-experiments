@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rl-experiments"
 version = "0.1.0"
-description = "A small PyTorch sandbox for analyzing RL update rules in toy settings, plus a tree-aware GRPO flow for small causal LMs."
+description = "Small PyTorch sandboxes for analyzing RL update rules, tree-aware GRPO, OPD, and vector-reward VPO."
 requires-python = ">=3.10"
 dependencies = [
     "torch",
@@ -29,4 +29,4 @@ rlm = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["rl_sandbox*", "rlm_grpo*", "opd_sandbox*"]
+include = ["rl_sandbox*", "rlm_grpo*", "opd_sandbox*", "vpo_sandbox*"]
