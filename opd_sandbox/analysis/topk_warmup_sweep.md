@@ -39,19 +39,19 @@ Final greedy test error at step 300:
 
 | Top-k | Warmup steps | Final test error | Final entropy |
 | ---: | ---: | ---: | ---: |
-| full vocab | all | 0.0022 ± 0.0020 | 0.0682 ± 0.0298 |
-| 4 | 0 | 0.8484 ± 0.0142 | 2.1972 ± 0.0000 |
-| 4 | 50 | 0.7760 ± 0.0122 | 2.1972 ± 0.0000 |
-| 4 | 100 | 0.7068 ± 0.0435 | 1.9846 ± 0.0153 |
-| 4 | 150 | 0.7148 ± 0.0318 | 2.0090 ± 0.0510 |
-| 4 | 200 | 0.6131 ± 0.0688 | 1.9049 ± 0.0580 |
-| 4 | 250 | 0.0079 ± 0.0064 | 0.1808 ± 0.1172 |
-| 8 | 0 | 0.3322 ± 0.0259 | 0.9376 ± 0.0476 |
-| 8 | 50 | 0.3029 ± 0.0492 | 0.8470 ± 0.1497 |
-| 8 | 100 | 0.1643 ± 0.1480 | 0.5225 ± 0.3742 |
-| 8 | 150 | 0.0279 ± 0.0369 | 0.1882 ± 0.1468 |
-| 8 | 200 | 0.0022 ± 0.0023 | 0.0779 ± 0.0342 |
-| 8 | 250 | 0.0011 ± 0.0010 | 0.0692 ± 0.0327 |
+| full vocab | all | 0.0022 +/- 0.0020 | 0.0682 +/- 0.0298 |
+| 4 | 0 | 0.8484 +/- 0.0142 | 2.1972 +/- 0.0000 |
+| 4 | 50 | 0.7760 +/- 0.0122 | 2.1972 +/- 0.0000 |
+| 4 | 100 | 0.7068 +/- 0.0435 | 1.9846 +/- 0.0153 |
+| 4 | 150 | 0.7148 +/- 0.0318 | 2.0090 +/- 0.0510 |
+| 4 | 200 | 0.6131 +/- 0.0688 | 1.9049 +/- 0.0580 |
+| 4 | 250 | 0.0079 +/- 0.0064 | 0.1808 +/- 0.1172 |
+| 8 | 0 | 0.3322 +/- 0.0259 | 0.9376 +/- 0.0476 |
+| 8 | 50 | 0.3029 +/- 0.0492 | 0.8470 +/- 0.1497 |
+| 8 | 100 | 0.1643 +/- 0.1480 | 0.5225 +/- 0.3742 |
+| 8 | 150 | 0.0279 +/- 0.0369 | 0.1882 +/- 0.1468 |
+| 8 | 200 | 0.0022 +/- 0.0023 | 0.0779 +/- 0.0342 |
+| 8 | 250 | 0.0011 +/- 0.0010 | 0.0692 +/- 0.0327 |
 
 A threshold is visible, and it depends sharply on the truncation width. With `k=8`, the truncation is close to full-vocabulary and becomes nearly stable after 150 warmup steps, matching the full-vocabulary baseline by 200. With `k=4`, the same method only becomes stable after 250 warmup steps. The interesting question is what the difference between those two thresholds reflects about the underlying mechanism.
 
@@ -87,7 +87,7 @@ For the selected support at the switch:
 | 8 | 200 | 0.9879 | 0.9979 |
 | 8 | 250 | 0.9972 | 0.9992 |
 
-Mass-on-support alone is not a sufficient switch criterion. At `k=4`, teacher mass on the student's selected support is already 0.90 by 200 warmup steps, but final error is still 0.61. The 250-step switch is qualitatively different in a way mass-on-support does not capture: it pairs high support mass with much stronger behavioral alignment, with top-1 agreement 0.73 and sampled reward 0.68, and that combination is what lets the truncated objective converge.
+Mass-on-support alone is not a sufficient switch criterion. At `k=4`, teacher mass on the student's selected support is already 0.90 by 200 warmup steps, but final error is still 0.61. The 250-step switch is qualitatively different in a way mass-on-support does not capture: it pairs high support mass with much stronger behavioral alignment (top-1 agreement 0.73, sampled reward 0.68), and only with that combination in place does the truncated objective actually converge.
 
 ## Post-switch change
 
@@ -114,7 +114,7 @@ For `k=8`, switching continues to improve the model at every warmup length, beca
 
 The reading I take from this sweep is that top-k OPD becomes viable only after the student enters a sufficiently aligned support regime, and the required alignment threshold rises as `k` gets smaller. With `k=8` the support restriction is mild, and the threshold sits below where the model has even solved the task. With `k=4` the support restriction is severe, and the threshold rises to the point where even high teacher mass on the retained support is not enough to guarantee a useful gradient.
 
-The most useful switch diagnostics are the behavioral ones, meaning top-1 agreement and sampled reward. Overlap@4 and mass-on-support describe the geometry but they do not on their own predict stable switching. The reason is mechanical. High teacher mass on the student's selected support can coexist with the student spreading its own mass nearly uniformly across that support, and the per-action gradient on each term scales with `π_student(a)`. A flat student distribution produces small per-term updates even when the geometry looks healthy. Top-1 agreement measures the condition that actually concentrates `π_student` on the teacher's preferred token, and that concentration is what lets the truncated objective converge on the teacher rather than dilute around it.
+The most useful switch diagnostics are the behavioral ones, meaning top-1 agreement and sampled reward. Overlap@4 and mass-on-support describe the geometry but they do not on their own predict stable switching. The reason is mechanical. High teacher mass on the student's selected support can coexist with the student spreading its own mass nearly uniformly across that support, and the per-action gradient on each term scales with `pi_student(a)`. A flat student distribution produces small per-term updates even when the geometry looks healthy. Top-1 agreement measures the condition that actually concentrates `pi_student` on the teacher's preferred token, and only that concentration lets the truncated objective converge on the teacher rather than dilute around it.
 
 This is the small-scale analog of the same-family / cold-start lesson in OPD. Top-k truncation belongs in the efficiency-and-stability toolbox once the student and teacher share a local support; it does not create that support from scratch.
 

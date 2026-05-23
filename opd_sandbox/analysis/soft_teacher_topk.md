@@ -54,19 +54,19 @@ With `teacher_temperature=1.0`, even full-vocabulary reverse KL does not solve t
 
 | Support | Warmup steps | Final test error | Final entropy |
 | --- | ---: | ---: | ---: |
-| full vocab | all | 0.5112 ± 0.0993 | 1.9169 ± 0.0676 |
-| student | 0 | 0.8351 ± 0.0151 | 2.1972 ± 0.0000 |
-| student | 100 | 0.7288 ± 0.0245 | 2.1972 ± 0.0000 |
-| student | 200 | 0.6945 ± 0.0058 | 2.1968 ± 0.0000 |
-| student | 250 | 0.7160 ± 0.0100 | 2.1945 ± 0.0008 |
-| teacher | 0 | 1.0000 ± 0.0000 | 1.8517 ± 0.0075 |
-| teacher | 100 | 0.9999 ± 0.0002 | 1.8601 ± 0.0114 |
-| teacher | 200 | 1.0000 ± 0.0000 | 1.8572 ± 0.0282 |
-| teacher | 250 | 0.9173 ± 0.0639 | 2.0375 ± 0.0306 |
-| intersection | 0 | 1.0000 ± 0.0000 | 1.7644 ± 0.0462 |
-| intersection | 100 | 1.0000 ± 0.0000 | 2.0131 ± 0.0192 |
-| intersection | 200 | 0.8585 ± 0.0135 | 2.1413 ± 0.0410 |
-| intersection | 250 | 0.7424 ± 0.0143 | 2.1577 ± 0.0195 |
+| full vocab | all | 0.5112 +/- 0.0993 | 1.9169 +/- 0.0676 |
+| student | 0 | 0.8351 +/- 0.0151 | 2.1972 +/- 0.0000 |
+| student | 100 | 0.7288 +/- 0.0245 | 2.1972 +/- 0.0000 |
+| student | 200 | 0.6945 +/- 0.0058 | 2.1968 +/- 0.0000 |
+| student | 250 | 0.7160 +/- 0.0100 | 2.1945 +/- 0.0008 |
+| teacher | 0 | 1.0000 +/- 0.0000 | 1.8517 +/- 0.0075 |
+| teacher | 100 | 0.9999 +/- 0.0002 | 1.8601 +/- 0.0114 |
+| teacher | 200 | 1.0000 +/- 0.0000 | 1.8572 +/- 0.0282 |
+| teacher | 250 | 0.9173 +/- 0.0639 | 2.0375 +/- 0.0306 |
+| intersection | 0 | 1.0000 +/- 0.0000 | 1.7644 +/- 0.0462 |
+| intersection | 100 | 1.0000 +/- 0.0000 | 2.0131 +/- 0.0192 |
+| intersection | 200 | 0.8585 +/- 0.0135 | 2.1413 +/- 0.0410 |
+| intersection | 250 | 0.7424 +/- 0.0143 | 2.1577 +/- 0.0195 |
 
 The broad teacher makes every support choice look pessimistic. Student-top-k is the least damaging of the truncated variants but still trails full-vocabulary RKL by a wide margin. Teacher-top-k and intersection-top-k are worse, and the reason is the student-weighting in the reverse-KL gradient. A token can sit inside the teacher's top-k and still produce a weak update if the student currently assigns it little probability. Concentrating the retained support on the teacher's side of the picture does not help when the bottleneck is on the student's side.
 
@@ -76,19 +76,19 @@ With `teacher_temperature=0.5`, full-vocabulary RKL improves substantially and t
 
 | Support | Warmup steps | Final test error | Final entropy |
 | --- | ---: | ---: | ---: |
-| full vocab | all | 0.2658 ± 0.0476 | 1.3172 ± 0.0428 |
-| student | 0 | 0.8471 ± 0.0236 | 2.1972 ± 0.0000 |
-| student | 100 | 0.7292 ± 0.0079 | 2.1971 ± 0.0000 |
-| student | 200 | 0.7085 ± 0.0329 | 2.1666 ± 0.0301 |
-| student | 250 | 0.6773 ± 0.0204 | 2.1519 ± 0.0133 |
-| teacher | 0 | 0.6768 ± 0.0022 | 1.9047 ± 0.0052 |
-| teacher | 100 | 0.6836 ± 0.0098 | 1.9455 ± 0.0061 |
-| teacher | 200 | 0.6651 ± 0.0337 | 1.9887 ± 0.0102 |
-| teacher | 250 | 0.7358 ± 0.0270 | 2.0624 ± 0.0168 |
-| intersection | 0 | 0.6631 ± 0.0109 | 2.1002 ± 0.0091 |
-| intersection | 100 | 0.6358 ± 0.0043 | 2.1744 ± 0.0009 |
-| intersection | 200 | 0.6394 ± 0.0380 | 2.1768 ± 0.0104 |
-| intersection | 250 | 0.7131 ± 0.0435 | 2.1792 ± 0.0106 |
+| full vocab | all | 0.2658 +/- 0.0476 | 1.3172 +/- 0.0428 |
+| student | 0 | 0.8471 +/- 0.0236 | 2.1972 +/- 0.0000 |
+| student | 100 | 0.7292 +/- 0.0079 | 2.1971 +/- 0.0000 |
+| student | 200 | 0.7085 +/- 0.0329 | 2.1666 +/- 0.0301 |
+| student | 250 | 0.6773 +/- 0.0204 | 2.1519 +/- 0.0133 |
+| teacher | 0 | 0.6768 +/- 0.0022 | 1.9047 +/- 0.0052 |
+| teacher | 100 | 0.6836 +/- 0.0098 | 1.9455 +/- 0.0061 |
+| teacher | 200 | 0.6651 +/- 0.0337 | 1.9887 +/- 0.0102 |
+| teacher | 250 | 0.7358 +/- 0.0270 | 2.0624 +/- 0.0168 |
+| intersection | 0 | 0.6631 +/- 0.0109 | 2.1002 +/- 0.0091 |
+| intersection | 100 | 0.6358 +/- 0.0043 | 2.1744 +/- 0.0009 |
+| intersection | 200 | 0.6394 +/- 0.0380 | 2.1768 +/- 0.0104 |
+| intersection | 250 | 0.7131 +/- 0.0435 | 2.1792 +/- 0.0106 |
 
 The sharper-teacher run changes the reading. Teacher-support and intersection-support are better than student-support at cold start, because student-support spends its early updates reinforcing arbitrary student-preferred tokens that have no relationship to the teacher's preference. After enough full-vocabulary warmup the picture flips. Student-support becomes competitive again, and at 250 warmup steps it has the lowest top-k final error among the truncated variants. None of the `k=4` variants catches full-vocabulary RKL, because the support restriction is still too severe for the task and horizon.
 
@@ -118,7 +118,7 @@ Here teacher and intersection support beat student support despite lower student
 
 ## Interpretation
 
-The hard-oracle top-k story acquires three caveats once the teacher is allowed to be soft. The first is that teacher entropy is a first-order variable. A broad teacher can be argmax-correct and still be a weak exact-reward teacher at fixed compute, because the reverse-KL gradient carries a directional component proportional to how much `log π_teacher(a)` varies across the support. A broad teacher attenuates that variation, so the per-token pull shrinks even when the teacher's argmax is right. The full-vocabulary baseline in the broad-teacher table is the cleanest witness for that, and the effect is not a top-k artifact.
+The hard-oracle top-k story acquires three caveats once the teacher is allowed to be soft. The first is that teacher entropy is a first-order variable. A broad teacher can be argmax-correct and still be a weak exact-reward teacher at fixed compute, because the reverse-KL gradient carries a directional component proportional to how much `log pi_teacher(a)` varies across the support. A broad teacher attenuates that variation, so the per-token pull shrinks even when the teacher's argmax is right. The full-vocabulary baseline in the broad-teacher table is the cleanest witness for that, and the effect is not a top-k artifact.
 
 The second is that support choice depends on alignment, not on teacher mass alone. Teacher-support and intersection-support can be better than student-support at cold start when the teacher is sharp, because student-support over-trusts arbitrary student modes. After warmup, student-support can become competitive again because reverse KL has usable mass where the student already assigns probability. Neither support choice is globally better.
 

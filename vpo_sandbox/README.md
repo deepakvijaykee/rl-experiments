@@ -1,31 +1,14 @@
-# VPO Sandbox
+# vpo_sandbox
 
-A toy Vector Policy Optimization sandbox for vector-reward, test-time-search
-experiments.
+A toy Vector Policy Optimization sandbox for vector-reward, test-time-search experiments.
 
-VPO does not fit the scalar `rl_sandbox.Batch` contract. A rollout here is a set
-of candidate answers, each candidate receives a reward vector, and the training
-reward is computed at the set level. Keeping this separate makes the VPO
-invariant visible instead of hiding it behind optional fields in the scalar
-sandbox.
+VPO does not fit the scalar `rl_sandbox.Batch` contract, and forcing it to would hide the part that makes VPO interesting. A rollout here is a *set* of candidate answers rather than a single answer. Each candidate carries a reward *vector* rather than a scalar. The training reward is computed at the set level, not the candidate level. Keeping VPO in its own package keeps that invariant visible instead of burying it behind optional fields in the scalar sandbox.
 
-## What Is Faithful Here
+## What the local implementation keeps
 
-- Each prompt samples a GRPO group of rollout sets.
-- Each rollout set contains `num_candidates` sampled answers.
-- Each candidate has a vector reward `r(x, y)`.
-- VPO samples Dirichlet scalarization weights and shares the same weight draws
-  across every rollout in a prompt group.
-- The set reward is `mean_w max_y w^T r(x, y)`.
-- The set reward is group-normalized and applied through a PPO/GRPO clipped
-  surrogate, with the same advantage broadcast to every candidate in the set.
-- `ScalarGRPO` and `MultiRLVR` are kept as scalar baselines with explicit config
-  checks for single-answer versus multi-answer rollouts.
+Every prompt samples a GRPO group of rollout sets. Each rollout set contains `num_candidates` sampled answers, and each candidate has a vector reward `r(x, y)`. VPO draws a batch of Dirichlet scalarization weights and shares the same draws across every rollout in a prompt group, which is what makes within-group advantages comparable across rollout sets rather than across independently scalarized samples. The set reward is `mean_w max_y w^T r(x, y)`. That set reward is then group-normalized and applied through a PPO/GRPO clipped surrogate, with the same advantage broadcast to every candidate inside the set. `ScalarGRPO` and `MultiRLVR` are kept alongside as scalar baselines, with explicit config checks for single-answer versus multi-answer rollouts so that a misconfigured run fails loudly rather than silently dropping the candidate dimension.
 
-What is intentionally toy-scoped: the policy is a prompt/slot embedding model,
-not a causal LM, and the task is a two-objective Pareto-front bandit. This pins
-the reward estimator and search-diversity contract without importing distributed
-rollout infrastructure.
+The toy scope is deliberate. The policy is a prompt/slot embedding model rather than a causal LM, and the task is a two-objective Pareto-front bandit. That choice pins the reward estimator and the search-diversity contract without dragging in distributed rollout infrastructure, which is the part of the original VPO setup the sandbox is not trying to reproduce.
 
 ## Run
 
@@ -40,7 +23,7 @@ python -m vpo_sandbox.train \
   --num_seeds 3
 ```
 
-Scalar single-answer GRPO:
+Scalar single-answer GRPO baseline:
 
 ```bash
 python -m vpo_sandbox.train \
@@ -60,8 +43,4 @@ python -m vpo_sandbox.train \
   --group_size 8
 ```
 
-The main evaluation metrics are `best_at_1`, `best_at_3`, `best_at_9`, and
-`pool_diversity_l1`. Best-at-k uses the fixed scalar deployment reward, while
-`pool_diversity_l1` measures spread in reward-vector space inside each emitted
-candidate set.
-
+The evaluation metrics that decide whether VPO is doing what it is supposed to do are `best_at_1`, `best_at_3`, `best_at_9`, and `pool_diversity_l1`. `best_at_k` uses the fixed scalar deployment reward and answers whether the candidate pool covers good answers under search. `pool_diversity_l1` measures spread in reward-vector space inside each emitted candidate set and answers whether the pool actually covers different trade-offs rather than collapsing to near-duplicates.
