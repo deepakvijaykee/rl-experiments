@@ -87,7 +87,8 @@ def _pg_core(logits, batch, baseline_kind):
 
 def _group_advantage(batch, like: torch.Tensor, normalize: bool = True) -> torch.Tensor:
     """Group-relative reward centering for GRPO-style objectives."""
-    assert batch.group_ids is not None, 'group-relative loss requires group_ids'
+    if batch.group_ids is None:
+        raise ValueError('group-relative loss requires group_ids')
     advantage = torch.zeros_like(batch.rewards)
     for gid in batch.group_ids.unique():
         mask = batch.group_ids == gid
@@ -97,8 +98,11 @@ def _group_advantage(batch, like: torch.Tensor, normalize: bool = True) -> torch
             advantage[mask] = centered
             continue
         std = group_rewards.std(unbiased=False)
-        if std > 1e-8:
-            advantage[mask] = centered / (std + 1e-8)
+        advantage[mask] = torch.where(
+            std > 1e-8,
+            centered / (std + 1e-8),
+            torch.zeros_like(centered),
+        )
     while advantage.dim() < like.dim():
         advantage = advantage.unsqueeze(-1)
     return advantage
@@ -164,7 +168,8 @@ def _grpo_advantage(scores: torch.Tensor) -> torch.Tensor:
 def _grouped_candidate_rows(batch, current_log_scores: torch.Tensor,
                             old_log_scores: torch.Tensor):
     """Yield current scores, old scores, and rewards for each sampled group."""
-    assert batch.group_ids is not None, 'candidate-group loss requires group_ids'
+    if batch.group_ids is None:
+        raise ValueError('candidate-group loss requires group_ids')
     for gid in batch.group_ids.unique():
         mask = batch.group_ids == gid
         yield current_log_scores[mask], old_log_scores[mask], batch.rewards[mask]
@@ -593,10 +598,13 @@ class LogGrowthLoss:
         self.baseline = baseline
 
     def __call__(self, logits, batch):
-        assert batch.actions.dim() == 1, \
-            'LogGrowth is only valid for one-step bandits (actions [B], not sequences)'
-        assert ((batch.rewards == 0) | (batch.rewards == 1)).all(), \
-            'LogGrowth requires binary rewards; shaped rewards are unsupported'
+        if batch.actions.dim() != 1:
+            raise ValueError(
+                'LogGrowth is only valid for one-step bandits '
+                '(actions [B], not sequences)')
+        if not ((batch.rewards == 0) | (batch.rewards == 1)).all():
+            raise ValueError(
+                'LogGrowth requires binary rewards; shaped rewards are unsupported')
         logp_a, advantage = _pg_core(logits, batch, self.baseline)
 
         is_success = (batch.actions == batch.labels).float()
@@ -645,8 +653,8 @@ class DGTokenCreditLoss:
 
         # Per-token return-to-go: fraction correct from position t onward.
         # Only meaningful for sequential tasks with [B, T] actions and labels.
-        assert batch.actions.dim() == 2, \
-            'DGToken requires sequential tasks with [B, T] actions'
+        if batch.actions.dim() != 2:
+            raise ValueError('DGToken requires sequential tasks with [B, T] actions')
         correct = (batch.actions == batch.labels).float()  # [B, T]
 
         if batch.score_mask is not None:
@@ -693,8 +701,9 @@ class SelfDistillDGLoss:
         self.alpha = alpha
 
     def __call__(self, logits, batch):
-        assert batch.actions.dim() == 2, \
-            'SelfDistillDG requires sequential tasks with [B, T] actions'
+        if batch.actions.dim() != 2:
+            raise ValueError(
+                'SelfDistillDG requires sequential tasks with [B, T] actions')
         log_probs = F.log_softmax(logits, dim=-1)
         probs = log_probs.exp()
         logp_a = gather_log_probs(log_probs, batch.actions)
@@ -739,8 +748,9 @@ class SCOPELiteLoss:
         self.alpha = alpha
 
     def __call__(self, logits, batch):
-        assert batch.actions.dim() == 2, \
-            'SCOPELite requires sequential tasks with [B, T] actions'
+        if batch.actions.dim() != 2:
+            raise ValueError(
+                'SCOPELite requires sequential tasks with [B, T] actions')
         log_probs = F.log_softmax(logits, dim=-1)
         logp_a = gather_log_probs(log_probs, batch.actions)
         _, advantage = _pg_core(logits, batch, self.baseline)
@@ -929,7 +939,8 @@ class GroupPGLoss:
 
         losses = []
         skill_abs = []
-        assert batch.group_ids is not None, 'GroupPG requires grouped rollouts'
+        if batch.group_ids is None:
+            raise ValueError('GroupPG requires grouped rollouts')
         for gid in batch.group_ids.unique():
             mask = batch.group_ids == gid
             current_group = current_scores[mask]
@@ -1102,8 +1113,8 @@ class TEMPOLoss:
         log_probs = F.log_softmax(logits, dim=-1)
         logp_a = gather_log_probs(log_probs, batch.actions)
 
-        assert batch.group_ids is not None, \
-            'TEMPO requires grouped rollouts (group_size > 1)'
+        if batch.group_ids is None:
+            raise ValueError('TEMPO requires grouped rollouts (group_size > 1)')
 
         rewards = batch.rewards
         actions = batch.actions
@@ -1122,23 +1133,26 @@ class TEMPOLoss:
                 continue
 
             g_std = g_rewards.std(unbiased=False)
-            if g_std < 1e-8:
-                continue  # all same reward; no learning signal
             g_mean = g_rewards.mean()
+            inv_std = torch.where(
+                g_std > 1e-8,
+                1.0 / (g_std + 1e-8),
+                torch.zeros_like(g_std),
+            )
 
             if is_seq:
                 g_actions = actions[mask]  # [K, H]
                 pv = self._prefix_values(g_actions, g_rewards)  # [K, H+1]
                 td = pv[:, 1:] - pv[:, :-1]  # [K, H]
 
-                grpo_base = (g_rewards - g_mean).unsqueeze(1) / g_std  # [K, 1]
-                advantage[mask] = grpo_base + td / g_std
+                grpo_base = (g_rewards - g_mean).unsqueeze(1) * inv_std  # [K, 1]
+                advantage[mask] = grpo_base + td * inv_std
 
                 td_nonzero += (td.abs() > 1e-8).sum().item()
                 td_total += td.numel()
             else:
                 # Bandit: no sequence, just GRPO normalization
-                advantage[mask] = (g_rewards - g_mean) / g_std
+                advantage[mask] = (g_rewards - g_mean) * inv_std
 
         # IS correction
         log_ratio = logp_a - batch.actor_logp_a
@@ -1181,10 +1195,10 @@ class MaxRLLoss:
         # For binary rewards, 1/mean = N/K, weighting each success by 1/K
         # instead of 1/N -- an unbiased ML gradient estimator.
         advantage = batch.rewards.clone()
-        assert batch.group_ids is not None, \
-            'MaxRL requires grouped rollouts (group_size > 1)'
-        assert ((batch.rewards == 0) | (batch.rewards == 1)).all(), \
-            'MaxRL requires binary rewards (R in {0,1})'
+        if batch.group_ids is None:
+            raise ValueError('MaxRL requires grouped rollouts (group_size > 1)')
+        if not ((batch.rewards == 0) | (batch.rewards == 1)).all():
+            raise ValueError('MaxRL requires binary rewards (R in {0,1})')
         for gid in batch.group_ids.unique():
             mask = batch.group_ids == gid
             grp = advantage[mask]

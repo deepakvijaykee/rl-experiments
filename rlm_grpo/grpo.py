@@ -60,10 +60,11 @@ def group_relative_advantages(
         centered = group_rewards - group_rewards.mean()
         if scale_rewards:
             std = group_rewards.std(unbiased=False)
-            if std > eps:
-                centered = centered / (std + eps)
-            else:
-                centered = torch.zeros_like(centered)
+            centered = torch.where(
+                std > eps,
+                centered / (std + eps),
+                torch.zeros_like(centered),
+            )
         advantages[mask] = centered
     return advantages
 

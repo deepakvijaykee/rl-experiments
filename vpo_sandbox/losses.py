@@ -53,8 +53,11 @@ def group_advantage(scores: torch.Tensor, group_ids: torch.Tensor) -> torch.Tens
         group_scores = scores[mask]
         centered = group_scores - group_scores.mean()
         std = group_scores.std(unbiased=False)
-        if std > 1e-8:
-            advantage[mask] = centered / (std + 1e-8)
+        advantage[mask] = torch.where(
+            std > 1e-8,
+            centered / (std + 1e-8),
+            torch.zeros_like(centered),
+        )
     return advantage
 
 
@@ -146,4 +149,3 @@ class VPOGRPOLoss:
             "adv_abs_mean": advantage.abs().mean().item(),
             "ratio_mean": ratio.mean().item(),
         }
-

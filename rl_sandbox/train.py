@@ -143,7 +143,8 @@ class ExperienceReplayBuffer:
 
     def sample(self, device, min_age: int):
         candidates = [b for b in self.buffer if b.age >= min_age]
-        assert candidates, 'replay buffer sampled before ready'
+        if not candidates:
+            raise ValueError('replay buffer sampled before ready')
         priorities = torch.tensor([self._priority(b) for b in candidates])
         if priorities.sum() <= 0:
             idx = torch.randint(len(candidates), (1,)).item()
@@ -160,6 +161,19 @@ class ExperienceReplayBuffer:
 # -- Gradient Diagnostics -----------------------------------------------------
 
 
+def _flat_parameter_gradients(model) -> torch.Tensor:
+    """Flatten gradients, representing unused parameters with explicit zeros."""
+    flat = []
+    for parameter in model.parameters():
+        if parameter.grad is None:
+            flat.append(torch.zeros_like(parameter).reshape(-1))
+        else:
+            flat.append(parameter.grad.detach().reshape(-1))
+    if not flat:
+        return torch.zeros(1)
+    return torch.cat(flat)
+
+
 def compute_gradient_cosines(
         model, task, batch, loss_fn, method_logits_fn, device) -> dict[str, float]:
     """Cosine similarity of method gradient to CE oracle gradient.
@@ -168,11 +182,11 @@ def compute_gradient_cosines(
     (compute_logits for RL methods, compute_logits_oracle for CE).
     """
     def flat_grad(logits_fn, compute_loss):
-        model.zero_grad()
+        model.zero_grad(set_to_none=True)
         logits = logits_fn(model, batch)
         loss = compute_loss(logits, batch)
         loss.backward()
-        return torch.cat([p.grad.flatten() for p in model.parameters()])
+        return _flat_parameter_gradients(model)
 
     g_method = flat_grad(method_logits_fn, lambda l, b: loss_fn(l, b)[0])
     g_ce = flat_grad(task.compute_logits_oracle, lambda l, b: F.cross_entropy(
@@ -183,7 +197,7 @@ def compute_gradient_cosines(
         'cos_method_ce': cos(g_method.unsqueeze(0), g_ce.unsqueeze(0)).item(),
         'grad_norm': g_method.norm().item(),
     }
-    model.zero_grad()
+    model.zero_grad(set_to_none=True)
     return result
 
 
@@ -283,8 +297,10 @@ def train_one_seed(task, loss_fn, model, config, seed, device) -> list[dict]:
 
     # Determine group_size for grouped methods
     group_size = config.group_size if config.method in GROUPED_METHODS else 1
-    assert config.batch_size % group_size == 0, \
-        f'batch_size ({config.batch_size}) must be divisible by group_size ({group_size})'
+    if config.batch_size % group_size != 0:
+        raise ValueError(
+            f'batch_size ({config.batch_size}) must be divisible by '
+            f'group_size ({group_size})')
 
     # Unified loop: first `delay` rollout steps are warmup. Remaining steps
     # train on genuinely stale data. Each rollout batch can receive multiple
@@ -798,8 +814,9 @@ def main():
         else:
             parser.add_argument(f'--{f.name}', type=ty, default=f.default)
     args = parser.parse_args()
+    arg_values = vars(args)
     config = Config(**{
-        f.name: getattr(args, f.name)
+        f.name: arg_values[f.name]
         for f in dataclasses.fields(Config)
     })
 

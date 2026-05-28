@@ -65,8 +65,9 @@ def config_from_args(
         args: argparse.Namespace,
         skip: set[str] | None = None) -> ConfigT:
     skip = skip or set()
+    arg_values = vars(args)
     return config_type(**{
-        field.name: getattr(args, field.name)
+        field.name: arg_values[field.name]
         for field in dataclasses.fields(config_type)
         if field.name not in skip
     })

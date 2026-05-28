@@ -33,6 +33,19 @@ from .train import Config, TASKS, MODEL_BUILDERS, validate_config
 gg.theme_set(gg.theme_bw(base_size=14))
 
 
+def flat_parameter_gradients(model: torch.nn.Module) -> torch.Tensor:
+    """Flatten gradients, filling unused parameters with zeros."""
+    flat = []
+    for parameter in model.parameters():
+        if parameter.grad is None:
+            flat.append(torch.zeros_like(parameter).reshape(-1))
+        else:
+            flat.append(parameter.grad.detach().reshape(-1))
+    if not flat:
+        return torch.zeros(1)
+    return torch.cat(flat)
+
+
 def per_sample_grads(model, logits_fn, batch, device):
     """Compute per-sample gradient of log pi(action|obs). Returns [B, P] tensor.
 
@@ -45,14 +58,14 @@ def per_sample_grads(model, logits_fn, batch, device):
 
     for i in range(B):
         single = batch.select(torch.tensor([i], device=device))
-        model.zero_grad()
+        model.zero_grad(set_to_none=True)
         logits = logits_fn(model, single)
         log_probs = F.log_softmax(logits, dim=-1)
         logp_a = gather_log_probs(log_probs, single.actions)
         logp_a.sum().backward()
-        grads[i] = torch.cat([p.grad.flatten() for p in model.parameters()])
+        grads[i] = flat_parameter_gradients(model)
 
-    model.zero_grad()
+    model.zero_grad(set_to_none=True)
     return grads
 
 
@@ -89,14 +102,14 @@ def analyze_batch(model, task, batch, device):
     pg_grads = per_sample_grads(model, task.compute_logits, batch, device)
 
     # CE oracle gradient: mean gradient of log pi(y*|x) over the batch
-    model.zero_grad()
+    model.zero_grad(set_to_none=True)
     oracle_logits = task.compute_logits_oracle(model, batch)
     ce_loss = F.cross_entropy(
         oracle_logits.reshape(-1, oracle_logits.size(-1)),
         batch.labels.reshape(-1))
     ce_loss.backward()
-    oracle_grad = torch.cat([p.grad.flatten() for p in model.parameters()])
-    model.zero_grad()
+    oracle_grad = flat_parameter_gradients(model)
+    model.zero_grad(set_to_none=True)
 
     # Oracle projection: how much each sample's gradient aligns with CE
     projections = pg_grads @ oracle_grad  # [B]

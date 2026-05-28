@@ -259,8 +259,8 @@ class RLMGRPOTrainer:
 
     def setup(self):
         self._validate_runtime()
-        self._load_model()
         self._load_dataset()
+        self._load_model()
         trainable = [p for p in self.model.parameters() if p.requires_grad]
         self.optimizer = torch.optim.AdamW(
             trainable,
@@ -322,7 +322,7 @@ class RLMGRPOTrainer:
 
         model = AutoModelForCausalLM.from_pretrained(
             self.config.model_name,
-            torch_dtype=torch_dtype,
+            dtype=torch_dtype,
             device_map="auto" if torch.cuda.is_available() else None,
             quantization_config=quantization_config,
             trust_remote_code=self.config.trust_remote_code,
@@ -353,7 +353,7 @@ class RLMGRPOTrainer:
         if not self.config.use_peft and self.config.kl_coef > 0:
             self.ref_model = AutoModelForCausalLM.from_pretrained(
                 self.config.model_name,
-                torch_dtype=torch_dtype,
+                dtype=torch_dtype,
                 device_map="auto" if torch.cuda.is_available() else None,
                 trust_remote_code=self.config.trust_remote_code,
             )
@@ -367,11 +367,15 @@ class RLMGRPOTrainer:
         from datasets import load_dataset
 
         if self.config.train_file:
-            suffix = Path(self.config.train_file).suffix
+            train_path = Path(self.config.train_file).expanduser()
+            if not train_path.is_file():
+                raise FileNotFoundError(f"train_file does not exist: {train_path}")
+            suffix = train_path.suffix.lower()
             if suffix == ".jsonl":
-                ds = load_dataset("json", data_files=self.config.train_file, split="train")
+                ds = load_dataset("json", data_files=str(train_path), split="train")
             elif suffix == ".parquet":
-                ds = load_dataset("parquet", data_files=self.config.train_file, split="train")
+                ds = load_dataset(
+                    "parquet", data_files=str(train_path), split="train")
             else:
                 raise ValueError("train_file must be .jsonl or .parquet")
         else:

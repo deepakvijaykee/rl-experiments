@@ -181,8 +181,9 @@ def main() -> None:
                 default=field.default,
             )
     args = parser.parse_args()
+    arg_values = vars(args)
     config = Config(**{
-        field.name: getattr(args, field.name)
+        field.name: arg_values[field.name]
         for field in dataclasses.fields(Config)
     })
 

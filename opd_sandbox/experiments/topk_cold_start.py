@@ -110,7 +110,8 @@ def loss_for_phase(phase: str, top_k: int | None):
     if phase == "full_vocab_rkl" or phase == "warmup_full_vocab":
         return L.OPDReverseKLLoss()
     if phase.startswith("cold_topk") or phase.startswith("warm_topk"):
-        assert top_k is not None
+        if top_k is None:
+            raise ValueError("top-k phase requires top_k")
         return L.OPDTopKReverseKLLoss(k=top_k)
     raise ValueError(f"unknown phase: {phase}")
 
