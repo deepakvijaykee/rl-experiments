@@ -9,3 +9,5 @@ scratch/
 
 .pytest_cache/
 .ruff_cache/
+*.egg-info/
+learnability_sandbox/tests/

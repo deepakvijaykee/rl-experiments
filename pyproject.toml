@@ -5,16 +5,22 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rl-experiments"
 version = "0.1.0"
-description = "Small PyTorch sandboxes for analyzing RL update rules, tree-aware GRPO, OPD, vector-reward VPO, and Pedagogical RL."
+description = "Small PyTorch sandboxes for analyzing RL updates, policy-environment learnability, tree-aware GRPO, OPD, vector-reward VPO, and Pedagogical RL."
 requires-python = ">=3.10"
 dependencies = [
     "torch",
     "torchvision",
     "pandas",
+    "pyarrow",
     "plotnine",
+    "python-chess",
 ]
 
 [project.optional-dependencies]
+chess-paper = [
+    "transformers",
+    "scipy",
+]
 lm-bandit = [
     "transformers",
     "datasets",
@@ -35,4 +41,5 @@ include = [
     "opd_sandbox*",
     "vpo_sandbox*",
     "pedagogy_sandbox*",
+    "learnability_sandbox*",
 ]
