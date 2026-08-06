@@ -8,7 +8,7 @@ To keep the answer clean, the experiment freezes the model. With a fixed random 
 | --- | --- |
 | `sequence_pg` | Sampled cumulative-return score estimator, with $R_t = \sum_{u \ge t} r_u$. |
 | `token_pg` | Sampled one-step score estimator with $\gamma = 0$ credit. |
-| `full_vocab_rkl` | Exact per-token $\mathrm{KL}(\pi_\text{student} \Vert \pi_\text{teacher})$ over the full vocabulary. |
+| `full_vocab_rkl` | Exact per-token $\mathrm{KL}(\pi_{\text{student}} \Vert \pi_{\text{teacher}})$ over the full vocabulary. |
 
 For each estimator, the script records the variance of a fixed random projection of the gradient across rollout batches. Projection variance is the right quantity to compare on, because a raw gradient norm would mix estimator scale with estimator noise while the projection separates the two.
 

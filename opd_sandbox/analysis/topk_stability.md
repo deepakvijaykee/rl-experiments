@@ -5,8 +5,8 @@ The OPD literature reaches for top-k truncation as an efficiency and stability l
 The top-k variant implemented here is intentionally literal:
 
 ```math
-\sum_{a \in \text{student top-}k} \pi_\text{student}(a \mid s)\,
-\bigl(\log \pi_\text{student}(a \mid s) - \log \pi_\text{teacher}(a \mid s)\bigr)
+\sum_{a \in \text{student top-}k} \pi_{\text{student}}(a \mid s)\,
+\bigl(\log \pi_{\text{student}}(a \mid s) - \log \pi_{\text{teacher}}(a \mid s)\bigr)
 ```
 
 It is not renormalized over the selected support. With $k$ equal to the full vocabulary it reduces to ordinary reverse KL, and with $k$ small it tests whether the student's current high-probability support already contains the teacher's useful tokens. Leaving it unnormalized is what keeps the diagnostic honest, since renormalizing over the retained support would make the omitted teacher mass invisible to the loss, and that omitted mass is the whole subject of the experiment.

@@ -12,14 +12,14 @@ The difficulty is that correct trajectories are not automatically useful ones. A
 
 ## Why the reward is a product
 
-The pedagogy reward is $R(x, c, \tau)\, G_\text{spike}(\tau \mid x)$, where $R$ is task success and $G_\text{spike}$ is a learnability term in $(0, 1]$ computed by scoring the trajectory under the frozen student. Because both factors multiply, both are necessary. A correct trajectory the student cannot follow is discounted toward zero, and an easy trajectory that fails the task is worth exactly zero no matter how familiar it looks.
+The pedagogy reward is $R(x, c, \tau)\, G_{\text{spike}}(\tau \mid x)$, where $R$ is task success and $G_{\text{spike}}$ is a learnability term in $(0, 1]$ computed by scoring the trajectory under the frozen student. Because both factors multiply, both are necessary. A correct trajectory the student cannot follow is discounted toward zero, and an easy trajectory that fails the task is worth exactly zero no matter how familiar it looks.
 
 That is what `TeacherRL` is in the package to test. It uses the additive form $R - \lambda \cdot \mathrm{NLL}$ instead, and the difference is not cosmetic. Under an additive reward a wrong trajectory can buy back score simply by being predictable, so the teacher faces a genuine trade between being right and being easy. The product form forbids that trade by construction, which is the structural claim worth isolating.
 
 The learnability term itself is built from the per-position surprise gap
 
 ```math
-\text{gap}_t = \max_a \log \pi_\text{student}(a \mid s_t) - \log \pi_\text{student}(a_t \mid s_t)
+\text{gap}_t = \max_a \log \pi_{\text{student}}(a \mid s_t) - \log \pi_{\text{student}}(a_t \mid s_t)
 ```
 
 which is zero exactly when the student would already have chosen the teacher's token at that position and grows with how far the teacher's choice sits from the student's own preference. Those per-position gaps are then combined with a log-sum-exp at inverse temperature `beta`, which interpolates between the mean gap as `beta` approaches zero and the maximum gap as `beta` grows. The soft maximum is the point of the design, and it is why the term is spike-aware rather than an average surprisal. A trajectory that is comfortable everywhere except at one step the student has no chance of producing is not a learnable trajectory, but averaging over positions hides exactly that step, since one impossible position among twenty barely moves a mean. Taking something close to a maximum instead lets a single blocking position veto the trajectory, which is what a blocker actually does to the student's ability to follow it.
@@ -28,7 +28,7 @@ The toy task is built so that the teacher has room to exercise this. The student
 
 ## Why the student gate points the way it does
 
-The student side assimilates teacher rollouts with a token-level imitation loss weighted by $\operatorname{sigmoid}(\kappa\,(\log \pi_\text{student}(a_t) - \gamma))$. The weight sits near one on tokens the student already assigns high probability and near zero on tokens it finds surprising. That is the reverse of hard-example mining, and the reversal is easy to read past: the most surprising tokens are precisely the ones this objective ignores.
+The student side assimilates teacher rollouts with a token-level imitation loss weighted by $\mathrm{sigmoid}(\kappa\,(\log \pi_{\text{student}}(a_t) - \gamma))$. The weight sits near one on tokens the student already assigns high probability and near zero on tokens it finds surprising. That is the reverse of hard-example mining, and the reversal is easy to read past: the most surprising tokens are precisely the ones this objective ignores.
 
 Read alongside the teacher reward, the two pieces push the same way. The teacher reward selects trajectories with no surprise spikes, and the student gate skips whatever spikes survive that selection, so the update stays inside the neighborhood where the student's current distribution already puts mass. The gate weights are recomputed under the current student for each assimilation batch rather than cached, which they have to be, since the gate is defined relative to a student that moves during assimilation and stale weights would gate against a model that no longer exists.
 
@@ -37,7 +37,7 @@ Read alongside the teacher reward, the two pieces push the same way. The teacher
 The scoped implementation is an online alternating toy instantiation that keeps the pieces defining the algorithm:
 
 - Teacher-side GRPO over privileged rollouts.
-- Product-form pedagogy reward $R(x, c, \tau)\, G_\text{spike}(\tau \mid x)$.
+- Product-form pedagogy reward $R(x, c, \tau)\, G_{\text{spike}}(\tau \mid x)$.
 - Spike-aware learnability using the log-sum-exp surprise-gap penalty from the blog post.
 - Surprisal-gated student imitation, with weights recomputed under the current student for each assimilation batch.
 - `TeacherRL` as the additive, spike-oblivious ablation, $R - \lambda \cdot \mathrm{NLL}$, followed by vanilla SFT into the student.

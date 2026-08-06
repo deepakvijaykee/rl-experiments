@@ -167,13 +167,13 @@ q = \prod_t p_t
 The two therefore share a terminal reward and a mixed-group probability. What they do not share is a trajectory distribution. Strict termination reaches step $t$ only when the earlier prefix was correct, which gives an expected length of
 
 ```math
-L_\text{strict} = \sum_t \prod_{j<t} p_j
+L_{\text{strict}} = \sum_t \prod_{j\lt t} p_j
 ```
 
 Reply replay always collects $H$ solver actions, so the entire difference between the protocols consists of actions sampled after the first error, at a point where terminal success is already impossible:
 
 ```math
-L_\text{replay} - L_\text{strict} = H - L_\text{strict}
+L_{\text{replay}} - L_{\text{strict}} = H - L_{\text{strict}}
 ```
 
 To measure that difference without confounding it with policy noise, `paper_chess.py` samples one complete $K$ by $H$ action plan per puzzle and supplies the same plan to both environments. Policy randomness is paired, so what remains is the transition protocol alone.
@@ -202,8 +202,8 @@ The reservoir picture rests on one local law: under group-centered credit, the e
 
 ```math
 \begin{aligned}
-\mathbb{E}[\Delta q] \ \propto\ \lVert \nabla_\theta q \rVert^2
-&= q^2\, \lVert \nabla_\theta \log q \rVert^2 \\
+\mathbb{E}[\Delta q] \ \propto\ \lVert \nabla_{\theta} q \rVert^2
+&= q^2\, \lVert \nabla_{\theta} \log q \rVert^2 \\
 &= q^2\, D (1 - p)^2 \qquad \text{(homogeneous task)}
 \end{aligned}
 ```
