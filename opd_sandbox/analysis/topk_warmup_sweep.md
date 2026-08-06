@@ -5,7 +5,7 @@ The cold-start probe established that 100 full-vocabulary steps is too short a w
 - `k=4`, which covers less than half the action space.
 - `k=8`, which covers all but one action token.
 
-`k=8` is a mild regularizer over the nine-token vocabulary; it excludes only one action, and rarely the teacher's preferred one once any warmup has happened. `k=4` cuts the policy down to roughly half its action space, which is a different kind of intervention. Averaging both under the label "top-k" would hide the mechanism, because the threshold at which either becomes stable depends on which one is being used.
+`k=8` is a mild regularizer over the nine-token vocabulary, excluding only one action, and rarely the teacher's preferred one once any warmup has happened. `k=4` cuts the policy down to roughly half its action space, which is a different kind of intervention. Averaging both under the label "top-k" would hide the mechanism, because the threshold at which either becomes stable depends on which one is being used.
 
 ## Command
 
@@ -25,17 +25,11 @@ python -m opd_sandbox.experiments.topk_warmup_sweep \
   --output_dir opd_sandbox/analysis/results
 ```
 
-Outputs:
-
-- `opd_sandbox/analysis/results/topk_warmup_sweep.csv`
-- `opd_sandbox/analysis/results/topk_warmup_sweep.png`
-- per-variant CSVs in the same directory
-
-The evidence run completed in about 238 seconds on the local machine.
+This writes `opd_sandbox/analysis/results/topk_warmup_sweep.csv`, `opd_sandbox/analysis/results/topk_warmup_sweep.png`, and per-variant CSVs in the same directory, in about 238 seconds locally, which buys twelve warmup-by-width cells and the threshold that falls out of them.
 
 ## Final result
 
-Final greedy test error at step 300:
+Reading the final greedy test error at step 300 by width rather than by row is what makes the threshold visible, since the two widths reach stability at very different warmup lengths.
 
 | Top-k | Warmup steps | Final test error | Final entropy |
 | ---: | ---: | ---: | ---: |
@@ -57,7 +51,7 @@ A threshold is visible, and it depends sharply on the truncation width. With `k=
 
 ## Switch diagnostics
 
-At the switch row, before the first top-k update:
+Knowing that a threshold exists is less useful than knowing what predicts it, since in any real run the switch has to be scheduled before its consequences are observable. The state of the model at the switch, measured before the first top-k update, is the only information a scheduler would actually have.
 
 | Warmup steps | Switch error | Top-1 agreement | Reward | Reverse KL |
 | ---: | ---: | ---: | ---: | ---: |
@@ -70,7 +64,7 @@ At the switch row, before the first top-k update:
 
 The switch diagnostics are identical for `k=4` and `k=8` because the warmup phase is full-vocabulary in both cases. As in the earlier top-k notes, `Overlap@4` is tie-sensitive in this oracle teacher because every wrong token has the same probability, so it can flag gross support mismatch but should not be used as the sole switch rule.
 
-For the selected support at the switch:
+Support geometry is the first candidate for that predictor, and it is the one most likely to be reached for, since it is cheap and it is what the truncation literally operates on.
 
 | Top-k | Warmup steps | Student top-k mass | Teacher mass on student top-k |
 | ---: | ---: | ---: | ---: |
@@ -91,7 +85,7 @@ Mass-on-support alone is not a sufficient switch criterion. At `k=4`, teacher ma
 
 ## Post-switch change
 
-Final error minus switch error:
+Final error against switch error isolates what the truncated phase contributed on its own, separating the credit due to the warmup from the credit or damage due to the switch.
 
 | Top-k | Warmup steps | Error change after switch |
 | ---: | ---: | ---: |
@@ -116,7 +110,7 @@ The reading I take from this sweep is that top-k OPD becomes viable only after t
 
 The most useful switch diagnostics are the behavioral ones, meaning top-1 agreement and sampled reward. Overlap@4 and mass-on-support describe the geometry but they do not on their own predict stable switching. The reason is mechanical. High teacher mass on the student's selected support can coexist with the student spreading its own mass nearly uniformly across that support, and the per-action gradient on each term scales with `pi_student(a)`. A flat student distribution produces small per-term updates even when the geometry looks healthy. Top-1 agreement measures the condition that actually concentrates `pi_student` on the teacher's preferred token, and only that concentration lets the truncated objective converge on the teacher rather than dilute around it.
 
-This is the small-scale analog of the same-family / cold-start lesson in OPD. Top-k truncation belongs in the efficiency-and-stability toolbox once the student and teacher share a local support; it does not create that support from scratch.
+This is the small-scale analog of the same-family / cold-start lesson in OPD. Top-k truncation belongs in the efficiency-and-stability toolbox once the student and teacher share a local support, and it does not create that support from scratch.
 
 The numeric threshold here is not universal. It is a property of this teacher, this student, this horizon, and this compute budget. The transferable part is the diagnostic structure: support mass, entropy, and behavior have to move together, and high retained mass alone is not evidence that the truncated objective still contains the useful correction.
 

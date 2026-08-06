@@ -28,17 +28,11 @@ python -m opd_sandbox.experiments.topk_stability \
   --output_dir opd_sandbox/analysis/results
 ```
 
-Outputs:
-
-- `opd_sandbox/analysis/results/topk_stability.csv`
-- `opd_sandbox/analysis/results/topk_stability.png`
-- per-variant CSVs in the same directory
-
-The evidence run completed in about 74 seconds on the local machine.
+This writes `opd_sandbox/analysis/results/topk_stability.csv`, `opd_sandbox/analysis/results/topk_stability.png`, and per-variant CSVs in the same directory, and it finishes in about 74 seconds locally. The runtime is the point of the sandbox rather than an aside: a question about whether support truncation has a precondition can be settled over a coffee break instead of a GPU-week, which is why it is worth asking here first.
 
 ## Result
 
-Final greedy evaluation at step 300:
+The headline comparison is the final greedy evaluation at step 300, where the question is simply whether each variant learned the task at all.
 
 | Variant | Test error | Entropy |
 | --- | ---: | ---: |
@@ -48,7 +42,7 @@ Final greedy evaluation at step 300:
 | `topk_rkl_k2` | 0.8538 +/- 0.0051 | 2.1972 +/- 0.0000 |
 | `topk_rkl_k4` | 0.8491 +/- 0.0367 | 2.1972 +/- 0.0000 |
 
-Last logged OPD diagnostics at step 280:
+Those error numbers say the top-k runs failed but not how. The diagnostics logged at step 280 narrow it down, and the column to watch is top-1 agreement, which measures whether the student has come to prefer the same token the teacher does.
 
 | Variant | Reverse KL | Top-1 agreement | Overlap@4 | Reward |
 | --- | ---: | ---: | ---: | ---: |
@@ -60,7 +54,7 @@ Last logged OPD diagnostics at step 280:
 
 `Overlap@4` is useful only as a rough support diagnostic in this toy. The oracle teacher has one high-probability target token and a uniform tail over wrong tokens, which makes the teacher's non-target top-k entries depend partly on tie-breaking. Top-1 agreement, sampled reward, and teacher mass on the student's selected support carry the cleaner signal.
 
-For the top-k variants, the selected support at step 280 has:
+That leaves one candidate explanation to eliminate. If the truncated runs simply retained too little teacher mass, then widening `k` should have rescued them, so it is worth looking at how much teacher probability each selected support actually captured at step 280.
 
 | Variant | Student top-k mass | Teacher mass on student top-k |
 | --- | ---: | ---: |
@@ -76,7 +70,7 @@ Full-vocabulary reverse KL learns the task almost perfectly. Sampled-token OPD i
 
 The mechanism is in the structure of the reverse-KL gradient itself. For each action in the support, the per-action gradient term is `pi_student(a|s) * (grad log pi_student(a|s) - grad log pi_teacher(a|s))`, and the sum runs across the actions inside the truncated support. Every term is weighted by the student's own probability on that action. Any teacher mass that lies outside the student's top-k contributes exactly zero to the gradient. Early in training the student is essentially uniform, its top-k for any given prefix is largely arbitrary, and the teacher's preferred token frequently falls outside that top-k. Increasing `k` from 1 to 4 raises teacher mass on the selected support from 0.14 to 0.53, but the increase does not enter the regime where the objective acquires the right local asymmetry. The missing component is directional, not quantitative. The optimizer has no signal at all to pull probability toward a token it is not currently considering.
 
-The part most likely to be misread is what counts as "improvement" once the support is restricted. The truncated objective can be reduced toward zero in the sense of its KL value, simply by making the student more uniform on the retained support, while still failing to create the local teacher-student agreement the task requires. The objective and the task disagree on what improvement means once support truncation is in place, and that disagreement is invisible to any single number that only measures the loss.
+There is a second, quieter problem underneath the first, which is that the truncated objective and the task stop agreeing on what improvement means. The truncated KL value can be driven toward zero simply by making the student more uniform over the retained support, which satisfies the loss while doing nothing to create the local teacher-student agreement the task actually requires. Any single number that only tracks the loss will therefore report progress through the entire failure.
 
 This is the small-scale analog of the OPD overlap caveat. Top-k OPD is a stability tool only when the student and teacher already share enough local support. In the large-model OPD setting that overlap usually comes for free, from a same-family teacher, an SFT cold start, or both. From an unaligned cold start, top-k truncation can remove the very signal that would have created overlap.
 

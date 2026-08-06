@@ -41,12 +41,7 @@ python -m opd_sandbox.experiments.soft_teacher_topk \
 
 The sharper-teacher sanity check used the same protocol with `--teacher_temperature 0.5` and output directory `opd_sandbox/analysis/results/soft_teacher_topk_temp05`.
 
-Outputs:
-
-- `opd_sandbox/analysis/results/soft_teacher_topk.csv`
-- `opd_sandbox/analysis/results/soft_teacher_topk.png`
-- `opd_sandbox/analysis/results/soft_teacher_topk_temp05/soft_teacher_topk.csv`
-- `opd_sandbox/analysis/results/soft_teacher_topk_temp05/soft_teacher_topk.png`
+The two runs write `opd_sandbox/analysis/results/soft_teacher_topk.csv` and `opd_sandbox/analysis/results/soft_teacher_topk.png` for the broad teacher, and `opd_sandbox/analysis/results/soft_teacher_topk_temp05/soft_teacher_topk.csv` with `opd_sandbox/analysis/results/soft_teacher_topk_temp05/soft_teacher_topk.png` for the sharper one, so the two temperatures produce parallel result sets that are read against each other below.
 
 ## Final result: broad soft teacher
 
@@ -67,6 +62,8 @@ With `teacher_temperature=1.0`, even full-vocabulary reverse KL does not solve t
 | intersection | 100 | 1.0000 +/- 0.0000 | 2.0131 +/- 0.0192 |
 | intersection | 200 | 0.8585 +/- 0.0135 | 2.1413 +/- 0.0410 |
 | intersection | 250 | 0.7424 +/- 0.0143 | 2.1577 +/- 0.0195 |
+
+Reading down the support blocks rather than across the warmup columns is what exposes the ordering, since within each support the warmup trend is mild compared to the gap between supports.
 
 The broad teacher makes every support choice look pessimistic. Student-top-k is the least damaging of the truncated variants but still trails full-vocabulary RKL by a wide margin. Teacher-top-k and intersection-top-k are worse, and the reason is the student-weighting in the reverse-KL gradient. A token can sit inside the teacher's top-k and still produce a weak update if the student currently assigns it little probability. Concentrating the retained support on the teacher's side of the picture does not help when the bottleneck is on the student's side.
 
@@ -90,13 +87,15 @@ With `teacher_temperature=0.5`, full-vocabulary RKL improves substantially and t
 | intersection | 200 | 0.6394 +/- 0.0380 | 2.1768 +/- 0.0104 |
 | intersection | 250 | 0.7131 +/- 0.0435 | 2.1792 +/- 0.0106 |
 
+The ordering inverts relative to the broad-teacher table, which is the result worth pausing on, because nothing about the support-selection rule changed between the two runs.
+
 The sharper-teacher run changes the reading. Teacher-support and intersection-support are better than student-support at cold start, because student-support spends its early updates reinforcing arbitrary student-preferred tokens that have no relationship to the teacher's preference. After enough full-vocabulary warmup the picture flips. Student-support becomes competitive again, and at 250 warmup steps it has the lowest top-k final error among the truncated variants. None of the `k=4` variants catches full-vocabulary RKL, because the support restriction is still too severe for the task and horizon.
 
 ## Switch diagnostics
 
 The switch rows expose why high teacher mass on the selected support is not enough on its own to predict stable switching.
 
-For the broad teacher at 250 warmup steps:
+Taking the broad teacher at 250 warmup steps first, every row below shares an identical switch state, since the warmup phase is full-vocabulary regardless of which support the truncation will later use. Only the last three columns differ, which makes them the only candidates for predicting the outcome.
 
 | Support | Switch error | Top-1 agreement | Reward | Student mass | Teacher mass | Support size |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -106,7 +105,7 @@ For the broad teacher at 250 warmup steps:
 
 Teacher-support captures the most teacher probability mass and produces the worst final model. Reverse KL is an expectation under the student, and teacher mass outside the student's own high-probability region does not pull strongly enough to recover.
 
-For the sharper teacher at cold start:
+The sharper teacher at cold start puts the same three columns under the opposite verdict.
 
 | Support | Switch error | Top-1 agreement | Reward | Student mass | Teacher mass | Support size |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -130,4 +129,4 @@ This is closer to the large-model OPD story than the hard-oracle result alone. T
 
 ## Scope
 
-These runs do not name a globally preferable top-k support for LLM OPD, and they should not be read that way. They show why a single overlap or mass-on-support number cannot pick one. The choice is an interaction between teacher entropy, student mass on the retained support, and behavioral alignment, and picking a winner requires measuring all three together.
+No globally preferable top-k support for LLM OPD comes out of these runs, and the more useful result is the reason why: a single overlap or mass-on-support number does not contain enough information to pick one. The choice is an interaction between teacher entropy, student mass on the retained support, and behavioral alignment, so picking a winner means measuring all three together.

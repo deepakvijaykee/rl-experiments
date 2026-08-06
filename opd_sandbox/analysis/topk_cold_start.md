@@ -28,17 +28,11 @@ python -m opd_sandbox.experiments.topk_cold_start \
   --output_dir opd_sandbox/analysis/results
 ```
 
-Outputs:
-
-- `opd_sandbox/analysis/results/topk_cold_start.csv`
-- `opd_sandbox/analysis/results/topk_cold_start.png`
-- per-variant CSVs in the same directory
-
-The evidence run completed in about 106 seconds on the local machine.
+This writes `opd_sandbox/analysis/results/topk_cold_start.csv`, `opd_sandbox/analysis/results/topk_cold_start.png`, and per-variant CSVs in the same directory, in about 106 seconds locally.
 
 ## Result
 
-Final greedy evaluation at step 300:
+The warm and cold arms sit side by side in the final greedy evaluation at step 300, so the comparison to make is whether any warm row has escaped the near-uniform entropy that characterized the cold-start failure.
 
 | Variant | Test error | Entropy |
 | --- | ---: | ---: |
@@ -50,7 +44,7 @@ Final greedy evaluation at step 300:
 | `warm_topk_k2` | 0.7749 +/- 0.0440 | 2.1971 +/- 0.0001 |
 | `warm_topk_k4` | 0.6963 +/- 0.0166 | 1.9873 +/- 0.0185 |
 
-Last logged OPD diagnostics at step 280:
+The step-280 diagnostics show how far each arm got behaviorally, which matters because the entropy column above cannot distinguish a student that never moved from one that moved and came back.
 
 | Variant | Reverse KL | Top-1 agreement | Overlap@4 | Reward |
 | --- | ---: | ---: | ---: | ---: |
@@ -64,7 +58,7 @@ Last logged OPD diagnostics at step 280:
 
 `Overlap@4` is tie-sensitive in this oracle task because every wrong teacher token has equal probability. It is useful as a rough geometry check but not as a switch criterion on its own. Top-1 agreement and reward carry the cleaner behavioral signal.
 
-Trajectory means show the failure mode at the switch point:
+The clearest evidence sits in the trajectory rather than the endpoint. Because all warm arms share an identical full-vocabulary phase, any divergence after step 100 is attributable to the switch itself, and the three steps around it are enough to see what the switch does.
 
 | Variant | Step 100 test error | Step 120 test error | Step 280 test error |
 | --- | ---: | ---: | ---: |
@@ -85,4 +79,4 @@ The mechanism behind both arms is the same, sharpened by the partial-warmup setu
 
 ## Scope
 
-In the cold-start toy setting, then, 100 full-vocabulary steps is not enough warmup to stabilize student-top-k truncation. The natural follow-up is to sweep `warmup_steps` more thoroughly and look for the threshold (on top-1 agreement, or on teacher mass over the student's selected support) above which top-k becomes stable. That sweep is the next run in the appendix.
+What this run establishes is narrow: in the cold-start toy setting, 100 full-vocabulary steps is not enough warmup to stabilize student-top-k truncation. It does not locate where enough would be. The natural follow-up is to sweep `warmup_steps` more thoroughly and look for the threshold, measured either on top-1 agreement or on teacher mass over the student's selected support, above which top-k becomes stable. That sweep is the next run in the appendix.

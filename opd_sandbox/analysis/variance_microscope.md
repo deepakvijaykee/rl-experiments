@@ -8,9 +8,9 @@ To keep the answer clean, the experiment freezes the model. With a fixed random 
 | --- | --- |
 | `sequence_pg` | Sampled cumulative-return score estimator, with `R_t = sum_{u >= t} r_u`. |
 | `token_pg` | Sampled one-step score estimator with gamma=0 credit. |
-| `full_vocab_rkl` | Exact per-token `KL(pi_student || pi_teacher)` over the full vocabulary. |
+| `full_vocab_rkl` | Exact per-token `KL(pi_student \|\| pi_teacher)` over the full vocabulary. |
 
-For each estimator, the script records the variance of a fixed random projection of the gradient across rollout batches. Projection variance is the right quantity to compare on; raw gradient norm would mix estimator scale with estimator noise, and the projection separates them.
+For each estimator, the script records the variance of a fixed random projection of the gradient across rollout batches. Projection variance is the right quantity to compare on, because a raw gradient norm would mix estimator scale with estimator noise while the projection separates the two.
 
 ## Command
 
@@ -25,16 +25,11 @@ python -m opd_sandbox.experiments.variance_microscope \
   --output_dir opd_sandbox/analysis/results
 ```
 
-Outputs:
-
-- `opd_sandbox/analysis/results/variance_microscope.csv`
-- `opd_sandbox/analysis/results/variance_microscope.png`
-
-The evidence run completed in about 22 seconds on the local machine.
+This writes `opd_sandbox/analysis/results/variance_microscope.csv` and `opd_sandbox/analysis/results/variance_microscope.png`, in about 22 seconds locally, since no training happens and the model never moves.
 
 ## Result
 
-Mean gradient-projection variance across three seeds:
+The table gives mean gradient-projection variance across three seeds. The absolute values matter less than how they move with horizon, so it is worth reading across rows rather than down columns.
 
 | Horizon | `full_vocab_rkl` | `token_pg` | `sequence_pg` |
 | ---: | ---: | ---: | ---: |
@@ -44,7 +39,7 @@ Mean gradient-projection variance across three seeds:
 | 32 | 1.27e-5 | 5.64e-5 | 1.42e+1 |
 | 64 | 6.93e-6 | 2.50e-5 | 8.89e+1 |
 
-Log-log slope of projection variance versus horizon:
+Fitting a slope to each column turns that trend into one number per estimator, which is the comparison the experiment exists to make.
 
 | Estimator | Slope | Growth from 4 to 64 |
 | --- | ---: | ---: |
@@ -56,7 +51,7 @@ The sequence-level estimator is already about 398x noisier than the exact full-v
 
 ## Interpretation
 
-The cumulative-return pathology shows up in the slope, and the slope tells most of the story. When each token's score function carries a cumulative sampled return, both the magnitude of each summand and the number of summed terms grow with horizon. Gradient variance grows faster than the count of summands alone would predict, because each term in the sum is heavier-tailed at longer horizons. The score-function term at position `t` integrates more noisy samples through its return, so its variance contribution rises with horizon as well. The variance of the sum picks up an extra factor beyond the linear count of terms, which is why the fitted slope on `sequence_pg` is steeper than quadratic.
+The cumulative-return pathology shows up in the slope, and the slope tells most of the story. When each token's score function carries a cumulative sampled return, the horizon enters twice. It sets how many terms are summed, and it sets how noisy each term is, because the score-function term at position `t` integrates more sampled rewards through its return the longer the remaining horizon is. Variance therefore grows faster than the count of summands alone would predict, picking up an extra factor on top of the linear term count, which is why the fitted slope on `sequence_pg` comes out steeper than quadratic.
 
 The per-token estimators in this sandbox average per token rather than summing across the sequence, matching the training convention used throughout the appendix. Under that normalization, `token_pg` and `full_vocab_rkl` actually become more stable with longer horizons, because each batch contains more per-token averaging. The ordering holds across normalization choices. If those estimators were rescaled back to a sum-over-tokens convention, their variance curves would shift upward by the corresponding length factor, but the ordering between the three estimators would not change. The cumulative sampled return is the unstable ingredient. The normalization only changes how the variance is distributed across the batch.
 
