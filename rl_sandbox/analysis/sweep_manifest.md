@@ -2,7 +2,7 @@
 
 The exact commands that produced the tables in [`results_matrix.md`](results_matrix.md). Run from the repository root. The trainer picks CUDA automatically when PyTorch can see a GPU.
 
-Each sweep is intentionally small: three seeds, `batch_size=96`, and short toy-task horizons. These are regime checks rather than benchmark claims, so what is worth reading from each table is the ordering between methods and the shape of each failure mode rather than the absolute numbers.
+Each sweep is small on purpose: three seeds, `batch_size=96`, and short toy-task horizons. They are regime checks and not benchmark claims, so what each table is good for is the ordering between methods and the shape of each failure mode. The absolute numbers move with seed and horizon and carry much less.
 
 Every section below states why its configuration is what it is. The commands are only half of a reproduction, since a sweep run at the wrong horizon or the wrong buffer capacity reproduces the syntax and not the experiment, and two of the sweeps here were originally read wrong for exactly that reason.
 

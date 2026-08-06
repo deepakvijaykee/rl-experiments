@@ -6,9 +6,9 @@ To keep the answer clean, the experiment freezes the model. With a fixed random 
 
 | Estimator | What it measures |
 | --- | --- |
-| `sequence_pg` | Sampled cumulative-return score estimator, with `R_t = sum_{u >= t} r_u`. |
-| `token_pg` | Sampled one-step score estimator with gamma=0 credit. |
-| `full_vocab_rkl` | Exact per-token `KL(pi_student \|\| pi_teacher)` over the full vocabulary. |
+| `sequence_pg` | Sampled cumulative-return score estimator, with $R_t = \sum_{u \ge t} r_u$. |
+| `token_pg` | Sampled one-step score estimator with $\gamma = 0$ credit. |
+| `full_vocab_rkl` | Exact per-token $\mathrm{KL}(\pi_\text{student} \Vert \pi_\text{teacher})$ over the full vocabulary. |
 
 For each estimator, the script records the variance of a fixed random projection of the gradient across rollout batches. Projection variance is the right quantity to compare on, because a raw gradient norm would mix estimator scale with estimator noise while the projection separates the two.
 
@@ -51,7 +51,7 @@ The sequence-level estimator is already about 398x noisier than the exact full-v
 
 ## Interpretation
 
-The cumulative-return pathology shows up in the slope, and the slope tells most of the story. When each token's score function carries a cumulative sampled return, the horizon enters twice. It sets how many terms are summed, and it sets how noisy each term is, because the score-function term at position `t` integrates more sampled rewards through its return the longer the remaining horizon is. Variance therefore grows faster than the count of summands alone would predict, picking up an extra factor on top of the linear term count, which is why the fitted slope on `sequence_pg` comes out steeper than quadratic.
+The cumulative-return pathology shows up in the slope, and the slope tells most of the story. When each token's score function carries a cumulative sampled return, the horizon enters the variance twice over. It sets how many terms get summed, and it sets how noisy each term is, since the score-function term at position $t$ integrates more sampled rewards through its return the longer the remaining horizon runs. Variance therefore picks up an extra factor on top of the linear term count, growing faster than the number of summands alone would predict, which is why the fitted slope on `sequence_pg` comes out steeper than quadratic.
 
 The per-token estimators in this sandbox average per token rather than summing across the sequence, matching the training convention used throughout the appendix. Under that normalization, `token_pg` and `full_vocab_rkl` actually become more stable with longer horizons, because each batch contains more per-token averaging. The ordering holds across normalization choices. If those estimators were rescaled back to a sum-over-tokens convention, their variance curves would shift upward by the corresponding length factor, but the ordering between the three estimators would not change. The cumulative sampled return is the unstable ingredient. The normalization only changes how the variance is distributed across the batch.
 
@@ -61,4 +61,4 @@ The fitted slopes are not universal scaling exponents. They depend on the toy te
 
 ## Scope
 
-The robust thing to carry over from this toy is the ordering between estimators rather than the absolute slopes. The fixed random model is the experimental choice that keeps the ordering interpretable, because it isolates estimator variance from the optimization and teacher-quality confounds that would otherwise drift in. Mixed teacher-student sampling, top-k truncation, and long-CoT extensions each introduce another moving part, which is why this particular run holds all of them off.
+What carries over from this toy is the ordering between estimators. The absolute slopes do not, for the reasons above. Holding the model fixed and random is what keeps that ordering interpretable, since it isolates estimator variance from the optimization and teacher-quality confounds that would otherwise drift in. Mixed teacher-student sampling, top-k truncation, and long-CoT extensions each add another moving part, so this run holds all three off and the later experiments introduce them one at a time.

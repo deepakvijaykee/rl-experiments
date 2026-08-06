@@ -45,23 +45,23 @@ The two runs write `opd_sandbox/analysis/results/soft_teacher_topk.csv` and `opd
 
 ## Final result: broad soft teacher
 
-With `teacher_temperature=1.0`, even full-vocabulary reverse KL does not solve the exact-token reversal task in 300 steps. The baseline itself carries information: an argmax-correct teacher can be too diffuse for the exact reward metric at fixed compute. Any reading of the support-choice rows below has to land against that baseline.
+With `teacher_temperature=1.0`, even full-vocabulary reverse KL fails to solve the exact-token reversal task in 300 steps. The baseline itself carries the first finding, which is that an argmax-correct teacher can be too diffuse for the exact reward metric at fixed compute. Every support-choice row below has to be read against that baseline and not against the sharp-teacher runs. Values are means across three seeds, with the standard error in parentheses.
 
 | Support | Warmup steps | Final test error | Final entropy |
 | --- | ---: | ---: | ---: |
-| full vocab | all | 0.5112 +/- 0.0993 | 1.9169 +/- 0.0676 |
-| student | 0 | 0.8351 +/- 0.0151 | 2.1972 +/- 0.0000 |
-| student | 100 | 0.7288 +/- 0.0245 | 2.1972 +/- 0.0000 |
-| student | 200 | 0.6945 +/- 0.0058 | 2.1968 +/- 0.0000 |
-| student | 250 | 0.7160 +/- 0.0100 | 2.1945 +/- 0.0008 |
-| teacher | 0 | 1.0000 +/- 0.0000 | 1.8517 +/- 0.0075 |
-| teacher | 100 | 0.9999 +/- 0.0002 | 1.8601 +/- 0.0114 |
-| teacher | 200 | 1.0000 +/- 0.0000 | 1.8572 +/- 0.0282 |
-| teacher | 250 | 0.9173 +/- 0.0639 | 2.0375 +/- 0.0306 |
-| intersection | 0 | 1.0000 +/- 0.0000 | 1.7644 +/- 0.0462 |
-| intersection | 100 | 1.0000 +/- 0.0000 | 2.0131 +/- 0.0192 |
-| intersection | 200 | 0.8585 +/- 0.0135 | 2.1413 +/- 0.0410 |
-| intersection | 250 | 0.7424 +/- 0.0143 | 2.1577 +/- 0.0195 |
+| full vocab | all | 0.5112 (0.0993) | 1.9169 (0.0676) |
+| student | 0 | 0.8351 (0.0151) | 2.1972 (0.0000) |
+| student | 100 | 0.7288 (0.0245) | 2.1972 (0.0000) |
+| student | 200 | 0.6945 (0.0058) | 2.1968 (0.0000) |
+| student | 250 | 0.7160 (0.0100) | 2.1945 (0.0008) |
+| teacher | 0 | 1.0000 (0.0000) | 1.8517 (0.0075) |
+| teacher | 100 | 0.9999 (0.0002) | 1.8601 (0.0114) |
+| teacher | 200 | 1.0000 (0.0000) | 1.8572 (0.0282) |
+| teacher | 250 | 0.9173 (0.0639) | 2.0375 (0.0306) |
+| intersection | 0 | 1.0000 (0.0000) | 1.7644 (0.0462) |
+| intersection | 100 | 1.0000 (0.0000) | 2.0131 (0.0192) |
+| intersection | 200 | 0.8585 (0.0135) | 2.1413 (0.0410) |
+| intersection | 250 | 0.7424 (0.0143) | 2.1577 (0.0195) |
 
 Reading down the support blocks rather than across the warmup columns is what exposes the ordering, since within each support the warmup trend is mild compared to the gap between supports.
 
@@ -73,23 +73,23 @@ With `teacher_temperature=0.5`, full-vocabulary RKL improves substantially and t
 
 | Support | Warmup steps | Final test error | Final entropy |
 | --- | ---: | ---: | ---: |
-| full vocab | all | 0.2658 +/- 0.0476 | 1.3172 +/- 0.0428 |
-| student | 0 | 0.8471 +/- 0.0236 | 2.1972 +/- 0.0000 |
-| student | 100 | 0.7292 +/- 0.0079 | 2.1971 +/- 0.0000 |
-| student | 200 | 0.7085 +/- 0.0329 | 2.1666 +/- 0.0301 |
-| student | 250 | 0.6773 +/- 0.0204 | 2.1519 +/- 0.0133 |
-| teacher | 0 | 0.6768 +/- 0.0022 | 1.9047 +/- 0.0052 |
-| teacher | 100 | 0.6836 +/- 0.0098 | 1.9455 +/- 0.0061 |
-| teacher | 200 | 0.6651 +/- 0.0337 | 1.9887 +/- 0.0102 |
-| teacher | 250 | 0.7358 +/- 0.0270 | 2.0624 +/- 0.0168 |
-| intersection | 0 | 0.6631 +/- 0.0109 | 2.1002 +/- 0.0091 |
-| intersection | 100 | 0.6358 +/- 0.0043 | 2.1744 +/- 0.0009 |
-| intersection | 200 | 0.6394 +/- 0.0380 | 2.1768 +/- 0.0104 |
-| intersection | 250 | 0.7131 +/- 0.0435 | 2.1792 +/- 0.0106 |
+| full vocab | all | 0.2658 (0.0476) | 1.3172 (0.0428) |
+| student | 0 | 0.8471 (0.0236) | 2.1972 (0.0000) |
+| student | 100 | 0.7292 (0.0079) | 2.1971 (0.0000) |
+| student | 200 | 0.7085 (0.0329) | 2.1666 (0.0301) |
+| student | 250 | 0.6773 (0.0204) | 2.1519 (0.0133) |
+| teacher | 0 | 0.6768 (0.0022) | 1.9047 (0.0052) |
+| teacher | 100 | 0.6836 (0.0098) | 1.9455 (0.0061) |
+| teacher | 200 | 0.6651 (0.0337) | 1.9887 (0.0102) |
+| teacher | 250 | 0.7358 (0.0270) | 2.0624 (0.0168) |
+| intersection | 0 | 0.6631 (0.0109) | 2.1002 (0.0091) |
+| intersection | 100 | 0.6358 (0.0043) | 2.1744 (0.0009) |
+| intersection | 200 | 0.6394 (0.0380) | 2.1768 (0.0104) |
+| intersection | 250 | 0.7131 (0.0435) | 2.1792 (0.0106) |
 
 The ordering inverts relative to the broad-teacher table, which is the result worth pausing on, because nothing about the support-selection rule changed between the two runs.
 
-The sharper-teacher run changes the reading. Teacher-support and intersection-support are better than student-support at cold start, because student-support spends its early updates reinforcing arbitrary student-preferred tokens that have no relationship to the teacher's preference. After enough full-vocabulary warmup the picture flips. Student-support becomes competitive again, and at 250 warmup steps it has the lowest top-k final error among the truncated variants. None of the `k=4` variants catches full-vocabulary RKL, because the support restriction is still too severe for the task and horizon.
+The sharper-teacher run changes the reading. Teacher-support and intersection-support are better than student-support at cold start, because student-support spends its early updates reinforcing arbitrary student-preferred tokens that have no relationship to the teacher's preference. After enough full-vocabulary warmup the picture flips. Student-support becomes competitive again, and at 250 warmup steps it has the lowest top-k final error among the truncated variants. None of the $k=4$ variants catches full-vocabulary RKL, because the support restriction is still too severe for the task and horizon.
 
 ## Switch diagnostics
 
@@ -117,13 +117,15 @@ Here teacher and intersection support beat student support despite lower student
 
 ## Interpretation
 
-The hard-oracle top-k story acquires three caveats once the teacher is allowed to be soft. The first is that teacher entropy is a first-order variable. A broad teacher can be argmax-correct and still be a weak exact-reward teacher at fixed compute, because the reverse-KL gradient carries a directional component proportional to how much `log pi_teacher(a)` varies across the support. A broad teacher attenuates that variation, so the per-token pull shrinks even when the teacher's argmax is right. The full-vocabulary baseline in the broad-teacher table is the cleanest witness for that, and the effect is not a top-k artifact.
+Once the teacher is allowed to be soft, three caveats attach to the hard-oracle top-k story, and they compound.
 
-The second is that support choice depends on alignment, not on teacher mass alone. Teacher-support and intersection-support can be better than student-support at cold start when the teacher is sharp, because student-support over-trusts arbitrary student modes. After warmup, student-support can become competitive again because reverse KL has usable mass where the student already assigns probability. Neither support choice is globally better.
+Teacher entropy turns out to be a first-order variable. A broad teacher can be argmax-correct and still be a weak exact-reward teacher at fixed compute, because the reverse-KL gradient carries a directional component proportional to how much $\log \pi_\text{teacher}(a)$ varies across the support. Broadening the teacher flattens that variation, so the per-token pull shrinks even where the teacher's argmax is right. The full-vocabulary baseline in the broad-teacher table is the cleanest witness, and since no truncation is involved there, the effect cannot be a top-k artifact.
 
-The third is that teacher mass on the selected support is necessary but not sufficient. A teacher-top-k set with high teacher mass can still produce a weak training signal if the student has low mass there. The trade-off between switching to teacher-support and staying on student-support is the trade between teacher-signal density and student-mass weight.
+That feeds the second caveat, which is that support choice depends on alignment and not on teacher mass alone. Teacher-support and intersection-support beat student-support at cold start when the teacher is sharp, because student-support spends its early updates over-trusting arbitrary student modes. After enough warmup the ordering flips back, since reverse KL then has usable mass where the student already assigns probability. Neither choice wins globally.
 
-The takeaway is therefore narrower and stronger than "top-k needs warmup". Support-truncated OPD needs both a sufficiently sharp teacher signal and a sufficiently aligned student support, and which top-k support is least misleading depends on which of the two preconditions is missing. There is no global ordering over support choices in these runs. Student, teacher, and intersection support each fail for different reasons when the teacher entropy, student mass, or behavioral alignment precondition is missing.
+The third caveat explains why. Teacher mass on the selected support is necessary and not sufficient, because a teacher-top-k set can carry high teacher mass and still produce a weak training signal when the student holds little mass there. Choosing between teacher-support and student-support is a trade between teacher-signal density and student-mass weight, and which side binds changes from run to run.
+
+What comes out is narrower and stronger than "top-k needs warmup." Support-truncated OPD needs a sufficiently sharp teacher signal and a sufficiently aligned student support at the same time, and which top-k support is least misleading depends on which of the two preconditions is missing. These runs yield no global ordering over support choices. Student, teacher, and intersection support each fail for a different reason as teacher entropy, student mass, or behavioral alignment gives out.
 
 This is closer to the large-model OPD story than the hard-oracle result alone. The reason same-family / cold-start OPD recipes work in practice is that the teacher is sharp and the local support is meaningful for the student, beyond the simpler claim that overlap is high.
 

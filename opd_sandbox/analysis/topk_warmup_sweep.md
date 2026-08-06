@@ -2,10 +2,10 @@
 
 The cold-start probe established that 100 full-vocabulary steps is too short a warmup to stabilize student-top-k truncation. The natural next move is to sweep warmup length more thoroughly and find the threshold. Doing the sweep at a single truncation width would only tell part of the story, because the meaning of "top-k" depends on how aggressive the truncation is. This run tests two widths in parallel:
 
-- `k=4`, which covers less than half the action space.
-- `k=8`, which covers all but one action token.
+- $k=4$, which covers less than half the action space.
+- $k=8$, which covers all but one action token.
 
-`k=8` is a mild regularizer over the nine-token vocabulary, excluding only one action, and rarely the teacher's preferred one once any warmup has happened. `k=4` cuts the policy down to roughly half its action space, which is a different kind of intervention. Averaging both under the label "top-k" would hide the mechanism, because the threshold at which either becomes stable depends on which one is being used.
+$k=8$ is a mild regularizer over the nine-token vocabulary, excluding only one action, and rarely the teacher's preferred one once any warmup has happened. $k=4$ cuts the policy down to roughly half its action space, which is a different kind of intervention. Averaging both under the label "top-k" would hide the mechanism, because the threshold at which either becomes stable depends on which one is being used.
 
 ## Command
 
@@ -29,25 +29,25 @@ This writes `opd_sandbox/analysis/results/topk_warmup_sweep.csv`, `opd_sandbox/a
 
 ## Final result
 
-Reading the final greedy test error at step 300 by width rather than by row is what makes the threshold visible, since the two widths reach stability at very different warmup lengths.
+Reading the final greedy test error at step 300 by width, rather than row by row, is what makes the threshold visible, since the two widths reach stability at very different warmup lengths. Values are means across three seeds, with the standard error in parentheses.
 
 | Top-k | Warmup steps | Final test error | Final entropy |
 | ---: | ---: | ---: | ---: |
-| full vocab | all | 0.0022 +/- 0.0020 | 0.0682 +/- 0.0298 |
-| 4 | 0 | 0.8484 +/- 0.0142 | 2.1972 +/- 0.0000 |
-| 4 | 50 | 0.7760 +/- 0.0122 | 2.1972 +/- 0.0000 |
-| 4 | 100 | 0.7068 +/- 0.0435 | 1.9846 +/- 0.0153 |
-| 4 | 150 | 0.7148 +/- 0.0318 | 2.0090 +/- 0.0510 |
-| 4 | 200 | 0.6131 +/- 0.0688 | 1.9049 +/- 0.0580 |
-| 4 | 250 | 0.0079 +/- 0.0064 | 0.1808 +/- 0.1172 |
-| 8 | 0 | 0.3322 +/- 0.0259 | 0.9376 +/- 0.0476 |
-| 8 | 50 | 0.3029 +/- 0.0492 | 0.8470 +/- 0.1497 |
-| 8 | 100 | 0.1643 +/- 0.1480 | 0.5225 +/- 0.3742 |
-| 8 | 150 | 0.0279 +/- 0.0369 | 0.1882 +/- 0.1468 |
-| 8 | 200 | 0.0022 +/- 0.0023 | 0.0779 +/- 0.0342 |
-| 8 | 250 | 0.0011 +/- 0.0010 | 0.0692 +/- 0.0327 |
+| full vocab | all | 0.0022 (0.0020) | 0.0682 (0.0298) |
+| 4 | 0 | 0.8484 (0.0142) | 2.1972 (0.0000) |
+| 4 | 50 | 0.7760 (0.0122) | 2.1972 (0.0000) |
+| 4 | 100 | 0.7068 (0.0435) | 1.9846 (0.0153) |
+| 4 | 150 | 0.7148 (0.0318) | 2.0090 (0.0510) |
+| 4 | 200 | 0.6131 (0.0688) | 1.9049 (0.0580) |
+| 4 | 250 | 0.0079 (0.0064) | 0.1808 (0.1172) |
+| 8 | 0 | 0.3322 (0.0259) | 0.9376 (0.0476) |
+| 8 | 50 | 0.3029 (0.0492) | 0.8470 (0.1497) |
+| 8 | 100 | 0.1643 (0.1480) | 0.5225 (0.3742) |
+| 8 | 150 | 0.0279 (0.0369) | 0.1882 (0.1468) |
+| 8 | 200 | 0.0022 (0.0023) | 0.0779 (0.0342) |
+| 8 | 250 | 0.0011 (0.0010) | 0.0692 (0.0327) |
 
-A threshold is visible, and it depends sharply on the truncation width. With `k=8`, the truncation is close to full-vocabulary and becomes nearly stable after 150 warmup steps, matching the full-vocabulary baseline by 200. With `k=4`, the same method only becomes stable after 250 warmup steps. The interesting question is what the difference between those two thresholds reflects about the underlying mechanism.
+A threshold is visible, and it depends sharply on the truncation width. With $k=8$, the truncation is close to full-vocabulary and becomes nearly stable after 150 warmup steps, matching the full-vocabulary baseline by 200. With $k=4$, the same method only becomes stable after 250 warmup steps. The interesting question is what the difference between those two thresholds reflects about the underlying mechanism.
 
 ## Switch diagnostics
 
@@ -62,7 +62,7 @@ Knowing that a threshold exists is less useful than knowing what predicts it, si
 | 200 | 0.5144 | 0.4824 | 0.4069 | 4.1331 |
 | 250 | 0.2620 | 0.7318 | 0.6842 | 2.2702 |
 
-The switch diagnostics are identical for `k=4` and `k=8` because the warmup phase is full-vocabulary in both cases. As in the earlier top-k notes, `Overlap@4` is tie-sensitive in this oracle teacher because every wrong token has the same probability, so it can flag gross support mismatch but should not be used as the sole switch rule.
+The switch diagnostics are identical for $k=4$ and $k=8$ because the warmup phase is full-vocabulary in both cases. As in the earlier top-k notes, `Overlap@4` is tie-sensitive in this oracle teacher because every wrong token has the same probability, so it can flag gross support mismatch but should not be used as the sole switch rule.
 
 Support geometry is the first candidate for that predictor, and it is the one most likely to be reached for, since it is cheap and it is what the truncation literally operates on.
 
@@ -81,7 +81,7 @@ Support geometry is the first candidate for that predictor, and it is the one mo
 | 8 | 200 | 0.9879 | 0.9979 |
 | 8 | 250 | 0.9972 | 0.9992 |
 
-Mass-on-support alone is not a sufficient switch criterion. At `k=4`, teacher mass on the student's selected support is already 0.90 by 200 warmup steps, but final error is still 0.61. The 250-step switch is qualitatively different in a way mass-on-support does not capture: it pairs high support mass with much stronger behavioral alignment (top-1 agreement 0.73, sampled reward 0.68), and only with that combination in place does the truncated objective actually converge.
+Mass-on-support alone is not a sufficient switch criterion. At $k=4$, teacher mass on the student's selected support is already 0.90 by 200 warmup steps, but final error is still 0.61. The 250-step switch is qualitatively different in a way mass-on-support does not capture: it pairs high support mass with much stronger behavioral alignment (top-1 agreement 0.73, sampled reward 0.68), and only with that combination in place does the truncated objective actually converge.
 
 ## Post-switch change
 
@@ -102,13 +102,13 @@ Final error against switch error isolates what the truncated phase contributed o
 | 8 | 200 | -0.5122 |
 | 8 | 250 | -0.2609 |
 
-For `k=8`, switching continues to improve the model at every warmup length, because the support restriction is mild enough that excluding one action token is rarely consequential once any warmup has happened. For `k=4`, switching between 50 and 200 steps actively degrades the model, which is the partial-warmup-erasure pattern from the previous run, made visible across the full warmup sweep.
+For $k=8$, switching continues to improve the model at every warmup length, because the support restriction is mild enough that excluding one action token is rarely consequential once any warmup has happened. For $k=4$, switching between 50 and 200 steps actively degrades the model, which is the partial-warmup-erasure pattern from the previous run, made visible across the full warmup sweep.
 
 ## Interpretation
 
-The reading I take from this sweep is that top-k OPD becomes viable only after the student enters a sufficiently aligned support regime, and the required alignment threshold rises as `k` gets smaller. With `k=8` the support restriction is mild, and the threshold sits below where the model has even solved the task. With `k=4` the support restriction is severe, and the threshold rises to the point where even high teacher mass on the retained support is not enough to guarantee a useful gradient.
+The reading I take from this sweep is that top-k OPD becomes viable only after the student enters a sufficiently aligned support regime, and the required alignment threshold rises as $k$ gets smaller. With $k=8$ the support restriction is mild, and the threshold sits below where the model has even solved the task. With $k=4$ the support restriction is severe, and the threshold rises to the point where even high teacher mass on the retained support is not enough to guarantee a useful gradient.
 
-The most useful switch diagnostics are the behavioral ones, meaning top-1 agreement and sampled reward. Overlap@4 and mass-on-support describe the geometry but they do not on their own predict stable switching. The reason is mechanical. High teacher mass on the student's selected support can coexist with the student spreading its own mass nearly uniformly across that support, and the per-action gradient on each term scales with `pi_student(a)`. A flat student distribution produces small per-term updates even when the geometry looks healthy. Top-1 agreement measures the condition that actually concentrates `pi_student` on the teacher's preferred token, and only that concentration lets the truncated objective converge on the teacher rather than dilute around it.
+The most useful switch diagnostics are the behavioral ones, meaning top-1 agreement and sampled reward. Overlap@4 and mass-on-support describe the geometry but they do not on their own predict stable switching. The reason is mechanical. High teacher mass on the student's selected support can coexist with the student spreading its own mass nearly uniformly across that support, and the per-action gradient on each term scales with $\pi_\text{student}(a)$. A flat student distribution produces small per-term updates even when the geometry looks healthy. Top-1 agreement measures the condition that actually concentrates $\pi_\text{student}$ on the teacher's preferred token, and only that concentration lets the truncated objective converge on the teacher rather than dilute around it.
 
 This is the small-scale analog of the same-family / cold-start lesson in OPD. Top-k truncation belongs in the efficiency-and-stability toolbox once the student and teacher share a local support, and it does not create that support from scratch.
 
